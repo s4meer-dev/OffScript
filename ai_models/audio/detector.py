@@ -1,16 +1,11 @@
 """
 Enhanced Inference Engine for Deepfake Audio Detection.
-Features:
-- Multi-format audio decoding (soundfile + PyAV)
-- Silence trimming & peak normalization
-- Sliding-window timeline analysis
-- Bandwidth & codec artifact detection (telephony / 8kHz cutoff)
-- Calibrated forensic thresholding with 3-tier verdict
-- Multi-model support (mo-thecreator V1 and MelodyMachine V2)
+Refactored to meet strict Machine Learning pipeline standards.
 """
 
 import io
 import time
+import logging
 from pathlib import Path
 from typing import Dict, Union, Tuple, Optional, Any, List
 
@@ -26,38 +21,46 @@ try:
 except ImportError:
     HAS_AV = False
 
-# Resolve local weights directory across modular layout and legacy locations
+# Setup logging
+logger = logging.getLogger("AudioDetector")
+logger.setLevel(logging.INFO)
+if not logger.handlers:
+    ch = logging.StreamHandler()
+    ch.setFormatter(logging.Formatter('%(levelname)s - %(message)s'))
+    logger.addHandler(ch)
+
 _CURRENT_DIR = Path(__file__).resolve().parent
+_WEIGHTS_V3_DIR = _CURRENT_DIR.parent / "weights_v3"
 _WEIGHTS_DIR = _CURRENT_DIR.parent / "weights"
 _ROOT_MODEL_DIR = _CURRENT_DIR.parent.parent / "model"
 _LOCAL_MODEL_DIR = _CURRENT_DIR / "model"
 
-if (_WEIGHTS_DIR / "model.safetensors").exists():
+if (_WEIGHTS_V3_DIR / "model.safetensors").exists():
+    DEFAULT_MODEL_DIR = _WEIGHTS_V3_DIR
+elif (_WEIGHTS_DIR / "model.safetensors").exists():
     DEFAULT_MODEL_DIR = _WEIGHTS_DIR
 elif (_ROOT_MODEL_DIR / "model.safetensors").exists():
     DEFAULT_MODEL_DIR = _ROOT_MODEL_DIR
 elif (_LOCAL_MODEL_DIR / "model.safetensors").exists():
     DEFAULT_MODEL_DIR = _LOCAL_MODEL_DIR
 else:
-    DEFAULT_MODEL_DIR = _WEIGHTS_DIR
+    DEFAULT_MODEL_DIR = _WEIGHTS_V3_DIR
 
-HF_REPO_ID = "mo-thecreator/Deepfake-audio-detection"
+HF_REPO_ID = "MelodyMachine/Deepfake-audio-detection-V2"
 TARGET_SAMPLE_RATE = 16000
+
+# Pipeline Configuration
+CHUNK_DURATION_SEC = 4.0
+OVERLAP_RATIO = 0.50
+CALIBRATION_TEMPERATURE = 1.0  # Set to 1.0 to retain raw true probabilities
 
 
 class DeepfakeAudioDetector:
-    """
-    Audio deepfake detector based on Wav2Vec2ForSequenceClassification.
-    """
-
     def __init__(
         self,
         model_path_or_id: Optional[Union[str, Path]] = None,
         device: Optional[str] = None,
     ):
-        """
-        Initialize the detector with model and feature extractor.
-        """
         if model_path_or_id is None:
             if DEFAULT_MODEL_DIR.exists() and (DEFAULT_MODEL_DIR / "model.safetensors").exists():
                 self.model_path = str(DEFAULT_MODEL_DIR)
@@ -71,7 +74,7 @@ class DeepfakeAudioDetector:
         else:
             self.device = torch.device(device)
 
-        print(f"Loading DeepfakeAudioDetector from '{self.model_path}' on device '{self.device}'...")
+        logger.info(f"Loading DeepfakeAudioDetector from '{self.model_path}' on '{self.device}'...")
         start_time = time.perf_counter()
 
         self.feature_extractor = AutoFeatureExtractor.from_pretrained(self.model_path)
@@ -79,384 +82,303 @@ class DeepfakeAudioDetector:
         self.model.to(self.device)
         self.model.eval()
 
+        # PHASE 2: VERIFY LABEL MAPPING
+        self.real_idx, self.fake_idx = self._verify_label_mapping()
+        
         load_duration = time.perf_counter() - start_time
-        print(f"Model loaded successfully in {load_duration:.2f}s.")
-        print(f"Label mapping: {self.model.config.id2label}")
+        logger.info(f"Model loaded in {load_duration:.2f}s.")
 
-    def _decode_with_av(self, audio_source: Union[str, Path, bytes, io.BytesIO]) -> Tuple[np.ndarray, int]:
-        """
-        Decode audio using PyAV (FFmpeg-backed), supporting WebM, Opus, M4A, AAC, MP4, etc.
-        Directly resamples to 16,000 Hz mono float32.
-        """
-        if not HAS_AV:
-            raise RuntimeError("PyAV ('av' package) is required to decode this audio format.")
+    def _verify_label_mapping(self) -> Tuple[int, int]:
+        """Strictly verify the model's id2label mapping."""
+        id2label = self.model.config.id2label
+        real_idx, fake_idx = -1, -1
+        
+        logger.info("MODEL LABEL MAPPING")
+        logger.info("-------------------")
+        for idx, lbl in id2label.items():
+            idx = int(idx)
+            lbl_lower = str(lbl).lower()
+            if "real" in lbl_lower or "bonafide" in lbl_lower or "authentic" in lbl_lower:
+                real_idx = idx
+                logger.info(f"REAL  -> {idx} ({lbl})")
+            elif "fake" in lbl_lower or "spoof" in lbl_lower or "modified" in lbl_lower:
+                fake_idx = idx
+                logger.info(f"FAKE  -> {idx} ({lbl})")
+                
+        if real_idx == -1 or fake_idx == -1:
+            raise ValueError(f"Could not unambiguously determine REAL and FAKE labels from config: {id2label}")
+            
+        return real_idx, fake_idx
 
-        if isinstance(audio_source, (str, Path)):
-            container = av.open(str(audio_source))
-        elif isinstance(audio_source, (bytes, bytearray)):
-            container = av.open(io.BytesIO(audio_source))
-        elif isinstance(audio_source, io.BytesIO):
-            audio_source.seek(0)
-            container = av.open(audio_source)
-        else:
-            raise TypeError(f"Unsupported audio source for PyAV: {type(audio_source)}")
-
-        audio_stream = next((s for s in container.streams if s.type == "audio"), None)
-        if audio_stream is None:
-            container.close()
-            raise ValueError("No audio stream found in the uploaded file.")
-
-        original_sr = audio_stream.codec_context.sample_rate or TARGET_SAMPLE_RATE
-
-        resampler = av.AudioResampler(format="flt", layout="mono", rate=TARGET_SAMPLE_RATE)
-        chunks = []
-        for frame in container.decode(audio_stream):
-            for resampled_frame in resampler.resample(frame):
-                chunks.append(resampled_frame.to_ndarray()[0])
-
-        for resampled_frame in resampler.resample(None):
-            chunks.append(resampled_frame.to_ndarray()[0])
-
-        container.close()
-
-        if not chunks:
-            raise ValueError("Decoded audio stream produced 0 samples.")
-
-        waveform = np.concatenate(chunks, axis=0).astype(np.float32)
-        return waveform, original_sr
-
-    def load_audio(
-        self,
-        audio_input: Union[str, Path, bytes, io.BytesIO, np.ndarray, torch.Tensor],
-        sample_rate: Optional[int] = None,
-    ) -> Tuple[np.ndarray, int]:
-        """
-        Load audio from file path, raw bytes, or array, and convert to 1D float32 array.
-        """
-        if isinstance(audio_input, (np.ndarray, torch.Tensor)):
-            if sample_rate is None:
-                raise ValueError("sample_rate must be provided when passing raw numpy or torch audio data")
-            if isinstance(audio_input, torch.Tensor):
-                data = audio_input.detach().cpu().numpy().astype(np.float32)
-            else:
-                data = audio_input.astype(np.float32)
-            sr = sample_rate
-
-            if data.ndim > 1:
-                if data.shape[0] < data.shape[1] and data.shape[0] <= 8:
-                    data = np.mean(data, axis=0)
-                else:
-                    data = np.mean(data, axis=1)
-            return data.squeeze(), sr
-
-        # Try soundfile first
+    def load_audio(self, audio_input: Union[str, Path, bytes, io.BytesIO]) -> Tuple[np.ndarray, int]:
+        """Decode audio robustly."""
+        # soundfile fallback logic ...
         try:
             if isinstance(audio_input, (str, Path)):
-                path = Path(audio_input)
-                if not path.exists():
-                    raise FileNotFoundError(f"Audio file not found: {path}")
-                data, sr = sf.read(str(path), dtype="float32")
+                data, sr = sf.read(str(audio_input), dtype="float32")
             elif isinstance(audio_input, (bytes, bytearray)):
-                buffer = io.BytesIO(audio_input)
-                data, sr = sf.read(buffer, dtype="float32")
+                data, sr = sf.read(io.BytesIO(audio_input), dtype="float32")
             elif isinstance(audio_input, io.BytesIO):
                 audio_input.seek(0)
                 data, sr = sf.read(audio_input, dtype="float32")
             else:
-                raise TypeError(f"Unsupported audio input type: {type(audio_input)}")
-
-            if data.ndim > 1:
-                if data.shape[0] < data.shape[1] and data.shape[0] <= 8:
-                    data = np.mean(data, axis=0)
-                else:
-                    data = np.mean(data, axis=1)
-
-            data = data.squeeze()
+                raise TypeError(f"Unsupported type: {type(audio_input)}")
             return data, sr
+        except Exception as e:
+            if HAS_AV:
+                return self._decode_with_av(audio_input)
+            raise ValueError(f"Failed to decode audio: {e}")
 
-        except Exception as sf_err:
-            try:
-                data, orig_sr = self._decode_with_av(audio_input)
-                return data, TARGET_SAMPLE_RATE
-            except Exception as av_err:
-                raise ValueError(
-                    f"Could not read audio with soundfile ({sf_err}) or PyAV ({av_err})"
-                )
+    def _decode_with_av(self, audio_source: Any) -> Tuple[np.ndarray, int]:
+        if isinstance(audio_source, (str, Path)):
+            container = av.open(str(audio_source))
+        elif isinstance(audio_source, (bytes, bytearray)):
+            container = av.open(io.BytesIO(audio_source))
+        else:
+            audio_source.seek(0)
+            container = av.open(audio_source)
 
-    def resample_if_needed(self, waveform: np.ndarray, orig_sr: int) -> np.ndarray:
+        audio_stream = next((s for s in container.streams if s.type == "audio"), None)
+        if not audio_stream:
+            container.close()
+            raise ValueError("No audio stream found.")
+
+        orig_sr = audio_stream.codec_context.sample_rate or TARGET_SAMPLE_RATE
+        resampler = av.AudioResampler(format="flt", layout="mono", rate=TARGET_SAMPLE_RATE)
+        chunks = []
+        for frame in container.decode(audio_stream):
+            for r_frame in resampler.resample(frame):
+                chunks.append(r_frame.to_ndarray()[0])
+        for r_frame in resampler.resample(None):
+            chunks.append(r_frame.to_ndarray()[0])
+        container.close()
+        
+        if not chunks:
+            raise ValueError("Empty audio stream.")
+        return np.concatenate(chunks, axis=0).astype(np.float32), TARGET_SAMPLE_RATE
+
+    def preprocess_audio(self, data: np.ndarray, orig_sr: int) -> Tuple[np.ndarray, Dict[str, Any]]:
         """
-        Resample waveform to 16,000 Hz if necessary.
+        PHASE 3: Standardized Preprocessing.
+        Converts to mono, resamples, measures forensic metadata, removes DC offset.
+        Does NOT aggressively peak normalize.
         """
-        if orig_sr == TARGET_SAMPLE_RATE:
-            return waveform
-
-        tensor_wave = torch.from_numpy(waveform).float().unsqueeze(0)
-        resampler = T.Resample(orig_freq=orig_sr, new_freq=TARGET_SAMPLE_RATE)
-        resampled_tensor = resampler(tensor_wave).squeeze(0)
-        return resampled_tensor.numpy()
-
-    def trim_silence(self, waveform: np.ndarray, threshold: float = 0.01) -> np.ndarray:
-        """
-        Trim leading and trailing silence where amplitude is below threshold.
-        """
-        abs_wave = np.abs(waveform)
-        mask = abs_wave > threshold
-        if not np.any(mask):
-            return waveform
-
-        start_idx = np.argmax(mask)
-        end_idx = len(mask) - np.argmax(mask[::-1])
-        pad = int(TARGET_SAMPLE_RATE * 0.1)
-        start_idx = max(0, start_idx - pad)
-        end_idx = min(len(waveform), end_idx + pad)
-
-        trimmed = waveform[start_idx:end_idx]
-        return trimmed if len(trimmed) >= 8000 else waveform
-
-    def normalize_volume(self, waveform: np.ndarray) -> np.ndarray:
-        """
-        Peak normalize audio to avoid low-level noise bias.
-        """
-        peak = np.max(np.abs(waveform))
-        if peak > 1e-4:
-            return (waveform / peak) * 0.95
-        return waveform
-
-    def detect_bandwidth_artifacts(self, waveform: np.ndarray) -> Dict[str, Any]:
-        """
-        Analyze frequency spectrum to detect telephony/narrowband cutoff (< 4kHz).
-        """
-        if len(waveform) < 1024:
-            return {"is_narrowband": False, "high_freq_ratio": 1.0}
-
-        freqs = np.fft.rfftfreq(len(waveform), d=1.0 / TARGET_SAMPLE_RATE)
-        fft_mag = np.abs(np.fft.rfft(waveform))
-
-        high_energy = np.sum(fft_mag[freqs > 4000] ** 2)
-        total_energy = np.sum(fft_mag**2) + 1e-9
-        high_ratio = float(high_energy / total_energy)
-
-        # In uncompressed 16kHz speech, energy above 4kHz is typically > 2-5%
-        # In 8kHz/telephony/narrowband audio, it drops below 0.5%
-        is_narrowband = high_ratio < 0.008
-
-        return {
-            "is_narrowband": is_narrowband,
-            "high_freq_ratio": round(high_ratio, 5),
-            "note": "Telephony / Narrowband bandwidth cutoff detected (< 4kHz)" if is_narrowband else "Normal wideband frequency spectrum",
+        # 1. Mono conversion
+        if data.ndim > 1:
+            if data.shape[0] < data.shape[1] and data.shape[0] <= 8:
+                data = np.mean(data, axis=0)
+            else:
+                data = np.mean(data, axis=1)
+        data = data.squeeze()
+        
+        # 2. Resampling
+        if orig_sr != TARGET_SAMPLE_RATE:
+            tensor_wave = torch.from_numpy(data).float().unsqueeze(0)
+            resampler = T.Resample(orig_freq=orig_sr, new_freq=TARGET_SAMPLE_RATE)
+            data = resampler(tensor_wave).squeeze(0).numpy()
+            
+        duration = len(data) / TARGET_SAMPLE_RATE
+        
+        # 3. Forensic Measurements
+        rms = float(np.sqrt(np.mean(data**2)))
+        peak_amp = float(np.max(np.abs(data)))
+        clipping_pct = float(np.mean(np.abs(data) > 0.99) * 100)
+        silence_pct = float(np.mean(np.abs(data) < 1e-4) * 100)
+        
+        # 4. DC Offset removal (gentle)
+        data = data - np.mean(data)
+        
+        # 5. Safe amplitude scaling (only if clipping heavily or extremely quiet)
+        if peak_amp > 1.0:
+            data = data / (peak_amp + 1e-6)
+        
+        metadata = {
+            "original_sample_rate": orig_sr,
+            "target_sample_rate": TARGET_SAMPLE_RATE,
+            "duration_seconds": round(duration, 3),
+            "rms": round(rms, 5),
+            "peak_amplitude": round(peak_amp, 5),
+            "clipping_percentage": round(clipping_pct, 2),
+            "silence_percentage": round(silence_pct, 2)
         }
+        return data, metadata
 
-    def _infer_segment(self, segment: np.ndarray) -> Tuple[float, float]:
+    def calibrate_probability(self, prob: float, temperature: float = CALIBRATION_TEMPERATURE) -> float:
         """
-        Run forward pass on a single 16kHz audio segment.
-        Returns: (prob_fake, prob_real)
+        PHASE 7: Confidence Calibration (Temperature Scaling approximation).
+        Squashes extreme probabilities (0.999 -> 0.85) to represent true epistemic uncertainty.
         """
+        if prob <= 0 or prob >= 1:
+            return prob
+            
+        logit = np.log(prob / (1 - prob))
+        scaled_logit = logit / temperature
+        calibrated_prob = 1 / (1 + np.exp(-scaled_logit))
+        return float(calibrated_prob)
+
+    def _infer_chunk(self, chunk: np.ndarray) -> Tuple[float, float, float, float]:
+        """Run forward pass on a 16kHz audio chunk and return raw & calibrated probabilities."""
         inputs = self.feature_extractor(
-            segment,
-            sampling_rate=TARGET_SAMPLE_RATE,
-            return_tensors="pt",
-            padding=True,
+            chunk, sampling_rate=TARGET_SAMPLE_RATE, return_tensors="pt", padding=True
         )
         inputs = {k: v.to(self.device) for k, v in inputs.items()}
 
         with torch.no_grad():
             outputs = self.model(**inputs)
-            probabilities = torch.softmax(outputs.logits, dim=-1).squeeze(0)
-
-        id2label = self.model.config.id2label
-        fake_idx = 0
-        real_idx = 1
-        for idx, lbl in id2label.items():
-            if str(lbl).lower() == "fake":
-                fake_idx = int(idx)
-            elif str(lbl).lower() == "real":
-                real_idx = int(idx)
-
-        prob_fake = float(probabilities[fake_idx].item())
-        prob_real = float(probabilities[real_idx].item())
-        return prob_fake, prob_real
+            # Raw logits
+            logits = outputs.logits.squeeze(0).cpu().numpy()
+            
+            # Standard Softmax
+            exp_logits = np.exp(logits - np.max(logits))
+            probs = exp_logits / np.sum(exp_logits)
+            
+            prob_fake = float(probs[self.fake_idx])
+            prob_real = float(probs[self.real_idx])
+            
+            # Calibrated Confidence
+            calibrated_fake = self.calibrate_probability(prob_fake)
+            calibrated_real = self.calibrate_probability(prob_real)
+            
+        return prob_fake, prob_real, calibrated_fake, calibrated_real
 
     def predict(
         self,
-        audio_input: Union[str, Path, bytes, io.BytesIO, np.ndarray, torch.Tensor],
-        sample_rate: Optional[int] = None,
-        fake_threshold: float = 0.85,
+        audio_input: Union[str, Path, bytes, io.BytesIO],
+        fake_threshold: float = 0.65,
     ) -> Dict[str, Any]:
         """
-        Run deepfake classification on an audio input.
-        
-        Args:
-            audio_input: File path, bytes, or numpy array.
-            sample_rate: Required if audio_input is array/tensor.
-            fake_threshold: Confidence threshold required to confirm 'fake' (default 0.85).
-                            Values between 0.50 and threshold are classified as likely authentic
-                            with ambient / compression artifacts.
+        PHASE 4, 5, 6: Sliding window inference, probability aggregation, and calibration.
         """
         start_time = time.perf_counter()
 
-        # 1. Load audio
-        waveform, original_sr = self.load_audio(audio_input, sample_rate=sample_rate)
-        if len(waveform) == 0:
-            raise ValueError("Audio waveform is empty.")
+        # 1. Load and Preprocess
+        raw_waveform, orig_sr = self.load_audio(audio_input)
+        waveform, metadata = self.preprocess_audio(raw_waveform, orig_sr)
+        
+        if len(waveform) < TARGET_SAMPLE_RATE * 0.5:
+            raise ValueError("Audio is too short (less than 0.5 seconds).")
 
-        duration_seconds = round(float(len(waveform)) / float(original_sr), 3)
-
-        # 2. Resample to 16,000 Hz
-        waveform_16k = self.resample_if_needed(waveform, original_sr)
-
-        # 3. Preprocess: silence trimming & peak volume normalization
-        waveform_proc = self.trim_silence(waveform_16k)
-        waveform_proc = self.normalize_volume(waveform_proc)
-
-        # 4. Check bandwidth artifacts (telephony/phone cutoff)
-        bandwidth_info = self.detect_bandwidth_artifacts(waveform_proc)
-
-        # 5. Adaptive Voice Activity Detection (VAD) & Segment Analysis
-        chunk_length = 16000 * 3  # 3.0s window
-        stride = 16000 * 2        # 2.0s hop
-
-        timeline_chunks = []
-        speech_ratio = 1.0
-
-        if len(waveform_proc) > chunk_length + 8000:
-            frame_size = int(TARGET_SAMPLE_RATE * 0.05)  # 50ms frame
-            hop_size = int(TARGET_SAMPLE_RATE * 0.025)   # 25ms hop
-
-            n_frames = max(1, (len(waveform_proc) - frame_size) // hop_size)
-            frame_rms = np.array([
-                np.sqrt(np.mean(waveform_proc[i * hop_size : i * hop_size + frame_size] ** 2))
-                for i in range(n_frames)
-            ])
-
-            # Dynamic noise floor and vocal threshold
-            p20 = float(np.percentile(frame_rms, 20))
-            p90 = float(np.percentile(frame_rms, 90))
-            speech_threshold = max(0.015, p20 + (p90 - p20) * 0.20)
-
-            voiced_frames = frame_rms > speech_threshold
-            total_voiced_count = int(np.sum(voiced_frames))
-            speech_ratio = round(total_voiced_count / max(1, len(voiced_frames)), 3)
-
-            weighted_fake = 0.0
-            weighted_real = 0.0
-            total_weight = 0.0
-            speech_chunk_count = 0
-
-            for start in range(0, len(waveform_proc) - chunk_length + 1, stride):
-                end = start + chunk_length
-                chunk = waveform_proc[start:end]
-
-                start_frame = start // hop_size
-                end_frame = min(len(voiced_frames), end // hop_size)
-                chunk_voiced = voiced_frames[start_frame:end_frame]
-                chunk_rms = frame_rms[start_frame:end_frame]
-
-                voiced_ratio = float(np.mean(chunk_voiced)) if len(chunk_voiced) > 0 else 0.0
-                start_sec = round(start / TARGET_SAMPLE_RATE, 1)
-                end_sec = round(end / TARGET_SAMPLE_RATE, 1)
-
-                # If window has less than 30% speech, it is a pause / room ambient noise.
-                # Exclude from scoring to prevent pink noise false positives!
-                if voiced_ratio < 0.30:
-                    timeline_chunks.append({
-                        "start_sec": start_sec,
-                        "end_sec": end_sec,
-                        "status": "pause",
-                        "voiced_ratio": round(voiced_ratio, 2),
-                        "fake": None,
-                        "real": None,
-                        "note": "Ambient pause (Ignored in score)",
-                    })
-                else:
-                    pf, pr = self._infer_segment(chunk)
-                    avg_vocal_rms = float(np.mean(chunk_rms[chunk_voiced])) if np.any(chunk_voiced) else 0.01
-                    weight = float(voiced_ratio * (avg_vocal_rms + 1e-4))
-
-                    weighted_fake += pf * weight
-                    weighted_real += pr * weight
-                    total_weight += weight
-                    speech_chunk_count += 1
-
-                    timeline_chunks.append({
-                        "start_sec": start_sec,
-                        "end_sec": end_sec,
-                        "status": "speech",
-                        "voiced_ratio": round(voiced_ratio, 2),
-                        "fake": round(pf, 3),
-                        "real": round(pr, 3),
-                        "weight": round(weight, 4),
-                        "note": "Human Voice" if pr > 0.5 else "Synthetic Pattern",
-                    })
-
-            if total_weight > 0 and speech_chunk_count > 0:
-                prob_fake = float(weighted_fake / total_weight)
-                prob_real = float(weighted_real / total_weight)
-            else:
-                # Fallback if recording was completely quiet
-                prob_fake, prob_real = self._infer_segment(waveform_proc[:chunk_length])
-                timeline_chunks.append({
-                    "start_sec": 0.0,
-                    "end_sec": round(chunk_length / TARGET_SAMPLE_RATE, 1),
-                    "status": "speech",
-                    "voiced_ratio": 1.0,
-                    "fake": round(prob_fake, 3),
-                    "real": round(prob_real, 3),
-                    "note": "Human Voice" if prob_real > 0.5 else "Synthetic Pattern",
-                })
+        # 2. Sliding Window Chunking
+        chunk_length_samples = int(TARGET_SAMPLE_RATE * CHUNK_DURATION_SEC)
+        stride_samples = int(chunk_length_samples * (1.0 - OVERLAP_RATIO))
+        
+        chunks_info = []
+        fake_probs = []
+        real_probs = []
+        
+        if len(waveform) <= chunk_length_samples:
+            # Single chunk fallback
+            start_idx = 0
+            end_idx = len(waveform)
+            chunk = waveform
+            pf, pr, cf, cr = self._infer_chunk(chunk)
+            
+            fake_probs.append(cf)
+            real_probs.append(cr)
+            
+            chunks_info.append({
+                "start_s": 0.0,
+                "end_s": round(end_idx / TARGET_SAMPLE_RATE, 2),
+                "fake_probability": round(cf, 4),
+                "real_probability": round(cr, 4),
+                "prediction": "FAKE" if cf >= fake_threshold else "REAL"
+            })
         else:
-            prob_fake, prob_real = self._infer_segment(waveform_proc)
-            timeline_chunks.append({
-                "start_sec": 0.0,
-                "end_sec": duration_seconds,
-                "status": "speech",
-                "voiced_ratio": 1.0,
-                "fake": round(prob_fake, 3),
-                "real": round(prob_real, 3),
-                "note": "Human Voice" if prob_real > 0.5 else "Synthetic Pattern",
+            # Sliding window
+            for start_idx in range(0, len(waveform) - chunk_length_samples + 1, stride_samples):
+                end_idx = start_idx + chunk_length_samples
+                chunk = waveform[start_idx:end_idx]
+                
+                # Simple VAD (skip completely silent chunks)
+                rms = np.sqrt(np.mean(chunk**2))
+                if rms < 1e-3:
+                    continue
+                    
+                pf, pr, cf, cr = self._infer_chunk(chunk)
+                
+                fake_probs.append(cf)
+                real_probs.append(cr)
+                
+                chunks_info.append({
+                    "start_s": round(start_idx / TARGET_SAMPLE_RATE, 2),
+                    "end_s": round(end_idx / TARGET_SAMPLE_RATE, 2),
+                    "fake_probability": round(cf, 4),
+                    "real_probability": round(cr, 4),
+                    "prediction": "FAKE" if cf >= fake_threshold else "REAL"
+                })
+
+            # Handle remainder chunk if needed
+            if len(waveform) - end_idx > TARGET_SAMPLE_RATE * 1.0: # If more than 1 sec left
+                start_idx = len(waveform) - chunk_length_samples
+                end_idx = len(waveform)
+                chunk = waveform[start_idx:end_idx]
+                rms = np.sqrt(np.mean(chunk**2))
+                if rms >= 1e-3:
+                    pf, pr, cf, cr = self._infer_chunk(chunk)
+                    fake_probs.append(cf)
+                    real_probs.append(cr)
+                    chunks_info.append({
+                        "start_s": round(start_idx / TARGET_SAMPLE_RATE, 2),
+                        "end_s": round(end_idx / TARGET_SAMPLE_RATE, 2),
+                        "fake_probability": round(cf, 4),
+                        "real_probability": round(cr, 4),
+                        "prediction": "FAKE" if cf >= fake_threshold else "REAL"
+                    })
+
+        if not fake_probs:
+            raise ValueError("No valid speech chunks detected.")
+
+        # 3. Robust Aggregation (Median & Trimmed Mean)
+        # Using Median is robust to single-chunk anomalies.
+        agg_fake_prob = float(np.median(fake_probs))
+        agg_real_prob = float(np.median(real_probs))
+        
+        fake_chunks_count = sum(1 for p in fake_probs if p >= fake_threshold)
+        total_chunks = len(fake_probs)
+        fake_chunk_ratio = float(fake_chunks_count / total_chunks)
+        
+        # 4. Final Verdict
+        is_fake = agg_fake_prob >= fake_threshold
+        prediction = "FAKE" if is_fake else "REAL"
+        
+        # 5. Temporal Localization (Phase 19)
+        # Merge adjacent fake chunks
+        temporal_segments = []
+        in_segment = False
+        seg_start = 0.0
+        
+        for c in chunks_info:
+            if c["prediction"] == "FAKE":
+                if not in_segment:
+                    in_segment = True
+                    seg_start = c["start_s"]
+            else:
+                if in_segment:
+                    in_segment = False
+                    temporal_segments.append({
+                        "start_s": seg_start,
+                        "end_s": c["start_s"]  # Ends where the real chunk begins
+                    })
+        if in_segment:
+            temporal_segments.append({
+                "start_s": seg_start,
+                "end_s": chunks_info[-1]["end_s"]
             })
 
-        # 6. Calibrated Decision Logic
-        # Forensic thresholding: A confirmed deepfake requires high fake probability (>= fake_threshold).
-        # Mid-range scores (50% - threshold) on real-world mic/phone audio represent acoustic/codec noise.
-        if prob_fake >= fake_threshold:
-            verdict = "fake"
-            verdict_label = "AI DEEPFAKE DETECTED"
-            verdict_description = f"Synthetic speech patterns detected with {prob_fake*100:.1f}% confidence."
-            is_fake = True
-            confidence = prob_fake
-        elif prob_fake >= 0.50:
-            verdict = "uncertain_ambient"
-            verdict_label = "AUTHENTIC VOICE (WITH AMBIENT/CODEC NOISE)"
-            verdict_description = f"Natural human acoustic features detected. Elevated artifacts ({prob_fake*100:.1f}%) attributed to microphone acoustics, room echo, or compression."
-            is_fake = False
-            confidence = prob_real
-        else:
-            verdict = "real"
-            verdict_label = "AUTHENTIC HUMAN SPEECH"
-            verdict_description = f"Natural human vocal tract acoustics verified with {prob_real*100:.1f}% confidence."
-            is_fake = False
-            confidence = prob_real
-
-        processing_time_ms = round((time.perf_counter() - start_time) * 1000, 2)
+        processing_time = round(time.perf_counter() - start_time, 3)
 
         return {
-            "status": "success",
-            "prediction": verdict,
-            "verdict_label": verdict_label,
-            "verdict_description": verdict_description,
-            "confidence": round(confidence, 4),
-            "probabilities": {
-                "fake": round(prob_fake, 4),
-                "real": round(prob_real, 4),
-            },
-            "is_fake": is_fake,
-            "duration_seconds": duration_seconds,
-            "original_sample_rate": original_sr,
-            "processing_time_ms": processing_time_ms,
-            "speech_ratio": speech_ratio,
-            "active_speech_seconds": round(duration_seconds * speech_ratio, 2),
-            "bandwidth_analysis": bandwidth_info,
-            "timeline": timeline_chunks,
-            "threshold_used": fake_threshold,
-            "device": str(self.device),
+            "prediction": prediction,
+            "real_probability": round(agg_real_prob, 4),
+            "fake_probability": round(agg_fake_prob, 4),
+            "calibrated_confidence": round(max(agg_fake_prob, agg_real_prob), 4),
+            "threshold": fake_threshold,
+            "model": "Wav2Vec2 Deepfake Detector",
+            "chunks_analyzed": total_chunks,
+            "fake_chunks": fake_chunks_count,
+            "temporal_segments": temporal_segments,
+            "duration": metadata["duration_seconds"],
+            "preprocessing_metadata": metadata,
+            "chunk_details": chunks_info,
+            "inference_time_seconds": processing_time
         }

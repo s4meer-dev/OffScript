@@ -11,7 +11,7 @@ from pathlib import Path
 from huggingface_hub import snapshot_download
 from transformers import AutoFeatureExtractor, AutoModelForAudioClassification
 
-REPO_ID = "mo-thecreator/Deepfake-audio-detection"
+REPO_ID = "MelodyMachine/Deepfake-audio-detection-V2"
 DEFAULT_LOCAL_DIR = Path(__file__).resolve().parent / "model"
 
 

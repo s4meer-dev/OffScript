@@ -1,5 +1,4 @@
 {
-  "_name_or_path": "motheecreator/Deepfake-audio-detection",
   "activation_dropout": 0.0,
   "adapter_attn_dim": null,
   "adapter_kernel_size": 3,
@@ -46,6 +45,7 @@
   "ctc_zero_infinity": false,
   "diversity_loss_weight": 0.1,
   "do_stable_layer_norm": false,
+  "dtype": "float32",
   "eos_token_id": 2,
   "feat_extract_activation": "gelu",
   "feat_extract_norm": "group",
@@ -57,14 +57,14 @@
   "hidden_dropout": 0.1,
   "hidden_size": 768,
   "id2label": {
-    "0": "fake",
-    "1": "real"
+    "0": "FAKE",
+    "1": "REAL"
   },
   "initializer_range": 0.02,
   "intermediate_size": 3072,
   "label2id": {
-    "fake": "0",
-    "real": "1"
+    "FAKE": 0,
+    "REAL": 1
   },
   "layer_norm_eps": 1e-05,
   "layerdrop": 0.0,
@@ -118,8 +118,8 @@
     1,
     1
   ],
-  "torch_dtype": "float32",
-  "transformers_version": "4.41.2",
+  "transformers_version": "5.17.0",
+  "use_cache": false,
   "use_weighted_layer_sum": false,
   "vocab_size": 32,
   "xvector_output_dim": 512
