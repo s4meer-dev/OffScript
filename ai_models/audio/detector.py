@@ -26,7 +26,21 @@ try:
 except ImportError:
     HAS_AV = False
 
-DEFAULT_MODEL_DIR = Path(__file__).resolve().parent / "model"
+# Resolve local weights directory across modular layout and legacy locations
+_CURRENT_DIR = Path(__file__).resolve().parent
+_WEIGHTS_DIR = _CURRENT_DIR.parent / "weights"
+_ROOT_MODEL_DIR = _CURRENT_DIR.parent.parent / "model"
+_LOCAL_MODEL_DIR = _CURRENT_DIR / "model"
+
+if (_WEIGHTS_DIR / "model.safetensors").exists():
+    DEFAULT_MODEL_DIR = _WEIGHTS_DIR
+elif (_ROOT_MODEL_DIR / "model.safetensors").exists():
+    DEFAULT_MODEL_DIR = _ROOT_MODEL_DIR
+elif (_LOCAL_MODEL_DIR / "model.safetensors").exists():
+    DEFAULT_MODEL_DIR = _LOCAL_MODEL_DIR
+else:
+    DEFAULT_MODEL_DIR = _WEIGHTS_DIR
+
 HF_REPO_ID = "mo-thecreator/Deepfake-audio-detection"
 TARGET_SAMPLE_RATE = 16000
 

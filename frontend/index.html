@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Multimodal Deepfake Detector</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🛡️</text></svg>">
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <header class="app-header">
+        <div class="header-container">
+            <div class="logo">
+                <span class="logo-icon">🛡️</span>
+                <span class="logo-text">Multimodal Deepfake Detector</span>
+            </div>
+            <div class="header-actions">
+                <a href="/docs" target="_blank" class="nav-link">API Docs</a>
+                <span id="systemStatus" class="status-pill status-loading">Checking system...</span>
+            </div>
+        </div>
+    </header>
+
+    <main class="main-container">
+        <!-- Hero Section -->
+        <section class="hero-section">
+            <h1>Audio-Visual Deepfake Detection</h1>
+            <p class="subtitle">Unified multimodal forensics powered by Wav2Vec2 speech transformers and AV-Deepfake1M benchmarks.</p>
+            
+            <!-- Quick Reference Samples -->
+            <div class="sample-chips">
+                <span class="sample-label">Quick Tests:</span>
+                <button type="button" class="btn-chip" onclick="loadSampleMedia('real_human_voice.wav')">🎧 Real Voice (WAV)</button>
+                <button type="button" class="btn-chip" onclick="loadSampleMedia('ai_voice_clone.wav')">🤖 Voice Clone (WAV)</button>
+            </div>
+        </section>
+
+        <!-- Detection Card -->
+        <section class="card upload-card">
+            <div class="controls-bar">
+                <div class="control-group">
+                    <label for="thresholdPreset">Forensic Calibration:</label>
+                    <select id="thresholdPreset" class="select-input">
+                        <option value="mobile" selected>🛡️ Balanced Mode (Audio 85%, Visual 65%)</option>
+                        <option value="strict">⚠️ Strict Forensics (Audio 75%, Visual 50%)</option>
+                        <option value="permissive">⚡ High Confidence Only (Audio 92%, Visual 80%)</option>
+                    </select>
+                </div>
+            </div>
+
+            <!-- Drag & Drop Zone -->
+            <div class="drop-zone" id="dropZone">
+                <input type="file" id="mediaInput" accept="audio/*,video/*" class="file-input">
+                <div class="drop-content">
+                    <div class="upload-icon">📁</div>
+                    <p class="drop-title">Click to select or drag & drop media file</p>
+                    <p class="drop-help">Supports Video (MP4, WebM, AVI, MOV) & Audio (WAV, MP3, FLAC, M4A)</p>
+                </div>
+            </div>
+
+            <!-- Selected File Info -->
+            <div id="fileInfo" class="file-info" style="display: none;">
+                <div class="file-meta">
+                    <span class="file-icon" id="fileIcon">📄</span>
+                    <div>
+                        <div id="fileName" class="file-name">filename.mp4</div>
+                        <div id="fileSize" class="file-size">0 KB</div>
+                    </div>
+                </div>
+                <button type="button" id="btnRemoveFile" class="btn-remove" title="Remove file">✕</button>
+            </div>
+
+            <!-- Action Button -->
+            <div class="action-row">
+                <button type="button" id="btnAnalyze" class="btn-primary" disabled>Analyze Media</button>
+            </div>
+
+            <!-- Loading Spinner -->
+            <div id="loadingIndicator" class="loading-state" style="display: none;">
+                <div class="spinner"></div>
+                <p id="loadingStatusText">Analyzing media forensics across speech and visual tracks...</p>
+            </div>
+        </section>
+
+        <!-- Results Card -->
+        <section id="resultsCard" class="card results-card" style="display: none;">
+            <div class="results-header">
+                <h2>Forensic Verdict</h2>
+                <div id="verdictBadge" class="verdict-badge">Authentic</div>
+            </div>
+
+            <!-- Confidence Bar -->
+            <div class="confidence-container">
+                <div class="confidence-labels">
+                    <span>Authenticity Confidence</span>
+                    <span id="confidenceValue" class="confidence-number">0.0%</span>
+                </div>
+                <div class="progress-bar-bg">
+                    <div id="confidenceBar" class="progress-bar-fill" style="width: 0%;"></div>
+                </div>
+            </div>
+
+            <!-- Modality Breakdown Grid -->
+            <div class="modality-grid">
+                <!-- Audio Forensic Card -->
+                <div class="sub-card">
+                    <div class="sub-card-header">
+                        <span class="sub-icon">🎙️</span>
+                        <h3>Acoustic Forensics</h3>
+                    </div>
+                    <div class="metric-row">
+                        <span>Speech Verdict:</span>
+                        <strong id="audioVerdict">-</strong>
+                    </div>
+                    <div class="metric-row">
+                        <span>Confidence:</span>
+                        <strong id="audioConfidence">-</strong>
+                    </div>
+                    <div class="metric-row">
+                        <span>Duration:</span>
+                        <strong id="audioDuration">-</strong>
+                    </div>
+                </div>
+
+                <!-- Visual Forensic Card -->
+                <div class="sub-card">
+                    <div class="sub-card-header">
+                        <span class="sub-icon">👁️</span>
+                        <h3>Visual Forensics</h3>
+                    </div>
+                    <div class="metric-row">
+                        <span>Vision Verdict:</span>
+                        <strong id="visualVerdict">-</strong>
+                    </div>
+                    <div class="metric-row">
+                        <span>Confidence:</span>
+                        <strong id="visualConfidence">-</strong>
+                    </div>
+                    <div class="metric-row">
+                        <span>Faces / Frames:</span>
+                        <strong id="visualFrames">-</strong>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Tampering Segments -->
+            <div id="tamperingSection" class="tampering-section" style="display: none;">
+                <h3>Temporal Tampering Localization</h3>
+                <div id="tamperingList" class="tampering-list"></div>
+            </div>
+
+            <!-- Collapsible Raw Data -->
+            <details class="raw-data-details">
+                <summary>Inspect Raw JSON Report</summary>
+                <pre id="jsonOutput" class="json-box"></pre>
+            </details>
+        </section>
+    </main>
+
+    <footer class="app-footer">
+        <p>Multimodal Deepfake Detection & Localization Platform &copy; 2026</p>
+    </footer>
+
+    <script src="/static/app.js"></script>
+</body>
+</html>

@@ -380,64 +380,89 @@ class DeepfakeVisionDetector:
                     valid_timestamps.append(t)
 
                     b_score = self._analyze_spatial_boundary(face)
-                    f_score = self._analyze_fft_frequency(face)
+                    f_face = self._analyze_fft_frequency(face)
+                    f_full = self._analyze_fft_frequency(frame)
+                    f_score = max(f_face, 0.85 * f_full)
+
                     boundary_scores.append(b_score)
                     fft_scores.append(f_score)
 
-                    # Frame-level tampering score
-                    frame_tampering = 0.55 * b_score + 0.45 * f_score
+                    # Frame-level tampering score:
+                    # An individual frame is tampered if EITHER generative frequency anomalies OR boundary seams are present
+                    frame_tampering = max(f_score, b_score)
                     frame_scores.append(frame_tampering)
                 else:
                     # Fallback for frames where no clear face is detected
-                    frame_scores.append(0.0)
+                    f_full = self._analyze_fft_frequency(frame)
+                    fft_scores.append(0.85 * f_full)
+                    boundary_scores.append(0.0)
+                    frame_scores.append(0.85 * f_full)
 
             faces_detected = len(face_crops)
             face_presence_ratio = round(faces_detected / len(frames), 3) if frames else 0.0
 
+            temporal_flicker = 0.0
+            deep_score = 0.0
             if faces_detected > 0:
                 temporal_flicker, flicker_per_frame = self._analyze_temporal_consistency(face_crops)
                 deep_score = self._extract_deep_features(face_crops)
-                mean_boundary = float(np.mean(boundary_scores))
-                mean_fft = float(np.mean(fft_scores))
 
-                # Combine multi-scale visual evidence
-                # Weight: boundary (35%), frequency (30%), temporal flicker (25%), deep anomaly (10%)
-                prob_fake = (
-                    0.35 * mean_boundary
-                    + 0.30 * mean_fft
-                    + 0.25 * temporal_flicker
-                    + 0.10 * deep_score
-                )
-            else:
-                # No face detected in video (e.g. background landscape or severe occlusion)
-                temporal_flicker = 0.0
-                deep_score = 0.0
-                mean_boundary = 0.0
-                mean_fft = 0.0
-                prob_fake = 0.10
+            mean_boundary = float(np.mean(boundary_scores)) if boundary_scores else 0.0
+            mean_fft = float(np.mean(fft_scores)) if fft_scores else 0.0
 
+            # Multi-Branch Forensic Evidence Fusion
+            # Distinguishes between Generative AI (Diffusion/Sora/Runway) and Face-Swapping (DeepFaceLab/SimSwap)
+            tampering_branches = {
+                "generative_ai": mean_fft,
+                "face_swap_boundary": mean_boundary,
+                "temporal_flicker": temporal_flicker,
+                "deep_anomaly": deep_score,
+            }
+
+            primary_type = max(tampering_branches, key=tampering_branches.get)
+            primary_score = tampering_branches[primary_type]
+            secondary_scores = [v for k, v in tampering_branches.items() if k != primary_type]
+            secondary_mean = float(np.mean(secondary_scores)) if secondary_scores else 0.0
+
+            # Dominant-signal fusion:
+            # Prevents dilution of strong individual tampering signatures (e.g. 82% FFT on full-AI videos)
+            prob_fake = 0.85 * primary_score + 0.15 * secondary_mean
             prob_fake = float(np.clip(prob_fake, 0.01, 0.99))
             prob_real = float(1.0 - prob_fake)
 
             is_fake = prob_fake >= threshold
             confidence = prob_fake if is_fake else prob_real
 
-            # 3-Tier Verdict
+            # Explanatory 3-Tier Verdict & Technique Labeling
             if is_fake:
                 prediction = "fake"
-                verdict = "Visual Manipulation / Face Deepfake Detected"
-            elif prob_fake > 0.40 and faces_detected > 0:
+                if primary_type == "generative_ai":
+                    verdict = "AI-Generated Synthetic Video Detected (Diffusion / Video Model Spectral Signature)"
+                    technique = "Generative AI Video (Text-to-Video / Image-to-Video)"
+                elif primary_type == "face_swap_boundary":
+                    verdict = "Facial Swap Deepfake Detected (Boundary Blending Seam Discontinuity)"
+                    technique = "Face Swap / Compositing Deepfake"
+                elif primary_type == "temporal_flicker":
+                    verdict = "Temporal Glitch / Video Warping Deepfake Detected"
+                    technique = "Temporal Deepfake / Morphing"
+                else:
+                    verdict = "Deepfake Video Manipulation Detected"
+                    technique = "Neural Manifold Anomaly"
+            elif prob_fake > 0.40:
                 prediction = "suspicious_visual"
                 verdict = "Suspicious Visual Artifacts (Inconclusive)"
+                technique = "Subtle Optical / Generative Inconsistencies"
             else:
                 prediction = "real"
                 verdict = "Authentic Video Frames"
+                technique = "None (Authentic Optical Capture)"
 
             # Temporal Tampering Localization
             visual_fake_segments = []
-            if faces_detected > 0 and prob_fake > 0.35:
+            target_timestamps = valid_timestamps if valid_timestamps else timestamps
+            if prob_fake > 0.35 and frame_scores:
                 visual_fake_segments = self._localize_temporal_segments(
-                    valid_timestamps, frame_scores, threshold=0.45
+                    target_timestamps, frame_scores, threshold=0.50
                 )
 
             elapsed = round(time.perf_counter() - start_time, 3)
@@ -458,6 +483,8 @@ class DeepfakeVisionDetector:
                 "face_presence_ratio": face_presence_ratio,
                 "video_metadata": metadata,
                 "forensic_metrics": {
+                    "primary_technique": technique,
+                    "generative_ai_score": round(mean_fft, 4),
                     "boundary_artifact_score": round(mean_boundary, 4),
                     "fft_frequency_score": round(mean_fft, 4),
                     "temporal_flicker_score": round(temporal_flicker, 4),

@@ -4,7 +4,10 @@ Integrates Wav2Vec2 and AV-Deepfake1M Computer Vision benchmarks.
 """
 
 import gradio as gr
-from multimodal_detector import UnifiedDeepfakeDetector
+try:
+    from ai_models.multimodal.multimodal_detector import UnifiedDeepfakeDetector
+except ImportError:
+    from multimodal_detector import UnifiedDeepfakeDetector
 
 print("Loading Unified Deepfake Detector for Gradio UI...")
 detector = UnifiedDeepfakeDetector()
@@ -31,8 +34,14 @@ def classify_media(file_obj, audio_thresh=0.85, visual_thresh=0.65):
         audio_res = result.get("audio_analysis", {})
         visual_res = result.get("visual_analysis", {})
 
+        is_audio_active = (
+            audio_res.get("activated", True)
+            and audio_res.get("probabilities") is not None
+            and audio_res.get("status") not in ["not_active", "no_audio_stream"]
+        )
+
         probs = {}
-        if audio_res.get("probabilities"):
+        if is_audio_active:
             probs["Audio: Authentic Voice"] = audio_res["probabilities"]["real"]
             probs["Audio: Synthetic / Fake"] = audio_res["probabilities"]["fake"]
         if visual_res.get("probabilities"):
@@ -59,7 +68,9 @@ def classify_media(file_obj, audio_thresh=0.85, visual_thresh=0.65):
 
         # Forensic details
         forensic_md = "### Detailed Forensic Metrics:\n"
-        if audio_res.get("status") != "no_audio_stream":
+        if not is_audio_active:
+            forensic_md += "- **Acoustic Subsystem:** ⏸️ Deactivated (No audio stream present in video)\n"
+        else:
             forensic_md += f"- **Acoustic Verdict:** {audio_res.get('prediction', 'N/A')}\n"
             if audio_res.get("bandwidth_analysis"):
                 forensic_md += f"- **Narrowband (<4kHz):** {audio_res['bandwidth_analysis'].get('is_narrowband')}\n"

@@ -17,8 +17,16 @@ import time
 from pathlib import Path
 from typing import Dict, List, Tuple, Union, Optional, Any
 
-from detector import DeepfakeAudioDetector
-from vision_detector import DeepfakeVisionDetector
+try:
+    from ai_models.audio.detector import DeepfakeAudioDetector
+    from ai_models.vision.vision_detector import DeepfakeVisionDetector
+except ImportError:
+    try:
+        from ..audio.detector import DeepfakeAudioDetector
+        from ..vision.vision_detector import DeepfakeVisionDetector
+    except (ImportError, ValueError):
+        from detector import DeepfakeAudioDetector
+        from vision_detector import DeepfakeVisionDetector
 
 VIDEO_EXTENSIONS = {".mp4", ".webm", ".avi", ".mov", ".mkv", ".flv", ".wmv", ".m4v"}
 AUDIO_EXTENSIONS = {".wav", ".mp3", ".flac", ".ogg", ".m4a", ".aac", ".wma", ".opus"}
@@ -135,43 +143,55 @@ class UnifiedDeepfakeDetector:
 
         return segments if segments else [[0.0, round(audio_result.get("duration_seconds", 0.0), 2)]]
 
+    def _check_has_audio_stream(self, file_path: str) -> bool:
+        """
+        Quickly inspect container metadata to verify if an audio stream exists
+        without running model inference.
+        """
+        try:
+            import av
+            container = av.open(str(file_path))
+            has_audio = any(s.type == "audio" for s in container.streams)
+            container.close()
+            return has_audio
+        except Exception:
+            return False
+
     def predict(
         self,
-        media_input: Union[str, Path, bytes],
+        media_input: Union[str, Path, bytes, io.BytesIO],
         filename: Optional[str] = None,
         audio_threshold: Optional[float] = None,
         visual_threshold: Optional[float] = None,
     ) -> Dict[str, Any]:
         """
-        Unified classification and temporal localization for audio or video media.
+        Unified prediction endpoint processing audio or video media.
         """
+        start_time = time.perf_counter()
         a_thresh = audio_threshold if audio_threshold is not None else self.audio_threshold
         v_thresh = visual_threshold if visual_threshold is not None else self.visual_threshold
-        start_time = time.perf_counter()
 
         is_video = self.is_video_file(media_input, filename=filename)
 
+        # ==============================================
+        # PURE AUDIO PIPELINE
+        # ==============================================
         if not is_video:
-            # ==========================================
-            # PURE AUDIO MEDIA PIPELINE
-            # ==========================================
             audio_res = self.audio_detector.predict(media_input, fake_threshold=a_thresh)
+            elapsed = round(time.perf_counter() - start_time, 3)
+
             audio_fake = audio_res.get("is_fake", False)
             audio_conf = audio_res.get("confidence", 0.5)
+            av_label = "audio_modified" if audio_fake else "real"
+            overall_prediction = "fake" if audio_fake else "real"
 
             audio_fake_segs = self._extract_audio_segments_from_windows(audio_res)
 
-            # Map to AV-Deepfake1M taxonomy
-            av_label = "audio_modified" if audio_fake else "real"
-            overall_prediction = "fake" if audio_fake else ("uncertain" if audio_res.get("prediction") == "uncertain_ambient" else "real")
-            
             verdict_text = (
                 "AI Synthetic / Voice Clone Detected (Audio)"
                 if audio_fake
-                else "Authentic Human Speech (Audio)"
+                else "Authentic Human Voice (Audio)"
             )
-
-            elapsed = round(time.perf_counter() - start_time, 3)
 
             return {
                 "status": "success",
@@ -188,10 +208,13 @@ class UnifiedDeepfakeDetector:
                 },
                 "audio_analysis": {
                     **audio_res,
+                    "activated": True,
+                    "has_audio_stream": True,
                     "audio_fake_segments": audio_fake_segs,
                 },
                 "visual_analysis": {
                     "status": "skipped",
+                    "activated": False,
                     "note": "Visual analysis not applicable for pure audio media.",
                 },
                 "fake_segments": audio_fake_segs,
@@ -212,6 +235,12 @@ class UnifiedDeepfakeDetector:
                 f.write(media_input)
                 temp_video_path = f.name
             target_source = temp_video_path
+        elif hasattr(media_input, "read"):
+            suffix = Path(filename).suffix if filename else ".mp4"
+            with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as f:
+                f.write(media_input.read())
+                temp_video_path = f.name
+            target_source = temp_video_path
         else:
             target_source = str(media_input)
 
@@ -222,32 +251,68 @@ class UnifiedDeepfakeDetector:
             visual_conf = vision_res.get("confidence", 0.5)
             visual_fake_segs = vision_res.get("visual_fake_segments", [])
 
-            # 2. Audio Stream Extraction & Analysis
+            # 2. Audio Stream Verification & Selective Activation
             audio_fake = False
-            audio_conf = 0.5
+            audio_conf = None
             audio_res = None
             audio_fake_segs = []
-            has_audio = True
+            has_audio = self._check_has_audio_stream(target_source)
 
-            try:
-                audio_res = self.audio_detector.predict(target_source, fake_threshold=a_thresh)
-                audio_fake = audio_res.get("is_fake", False)
-                audio_conf = audio_res.get("confidence", 0.5)
-                audio_fake_segs = self._extract_audio_segments_from_windows(audio_res)
-            except Exception as e:
-                # Video file has no audio track or decoding failed
-                has_audio = False
+            if has_audio:
+                try:
+                    audio_res = self.audio_detector.predict(target_source, fake_threshold=a_thresh)
+                    speech_ratio = audio_res.get("speech_ratio", 1.0)
+                    # If audio track exists but has no active speech (flat silence), deactivate audio influence
+                    if speech_ratio == 0.0 or audio_res.get("prediction") == "silent":
+                        has_audio = False
+                        audio_res = {
+                            "status": "not_active",
+                            "activated": False,
+                            "has_audio_stream": True,
+                            "note": "Audio stream contains no active speech (silent audio track). Audio subsystem deactivated.",
+                            "is_fake": None,
+                            "confidence": None,
+                            "probabilities": None,
+                            "prediction": "none",
+                            "audio_fake_segments": [],
+                        }
+                    else:
+                        audio_fake = audio_res.get("is_fake", False)
+                        audio_conf = audio_res.get("confidence", 0.5)
+                        audio_fake_segs = self._extract_audio_segments_from_windows(audio_res)
+                        audio_res["activated"] = True
+                        audio_res["has_audio_stream"] = True
+                except Exception as e:
+                    # Video had an audio stream declared in header but decoding failed
+                    has_audio = False
+                    audio_res = {
+                        "status": "not_active",
+                        "activated": False,
+                        "has_audio_stream": False,
+                        "note": f"Audio track could not be decoded ({e}). Subsystem deactivated.",
+                        "is_fake": None,
+                        "confidence": None,
+                        "probabilities": None,
+                        "prediction": "none",
+                        "audio_fake_segments": [],
+                    }
+            else:
+                # Video file has no audio stream: Audio detection subsystem is NOT activated.
+                # It does not run inference and does NOT report 100% human probabilities.
                 audio_res = {
-                    "status": "no_audio_stream",
-                    "note": f"Video does not contain an extractable audio track ({e})",
-                    "is_fake": False,
-                    "confidence": 1.0,
-                    "probabilities": {"fake": 0.0, "real": 1.0},
-                    "prediction": "silent",
+                    "status": "not_active",
+                    "activated": False,
+                    "has_audio_stream": False,
+                    "note": "Video file contains no audio stream. Audio detection subsystem was not activated.",
+                    "is_fake": None,
+                    "confidence": None,
+                    "probabilities": None,
+                    "prediction": "none",
+                    "audio_fake_segments": [],
                 }
 
             # 3. Multimodal Fusion (AV-Deepfake1M Standard)
-            if has_audio:
+            if has_audio and audio_conf is not None:
                 if audio_fake and visual_fake:
                     av_label = "both_modified"
                     verdict_title = "Full Audio-Visual Deepfake (Both Video & Voice Manipulated)"
@@ -255,7 +320,8 @@ class UnifiedDeepfakeDetector:
                     overall_conf = round(max(audio_conf, visual_conf), 4)
                 elif visual_fake and not audio_fake:
                     av_label = "visual_modified"
-                    verdict_title = "Face / Visual Deepfake (Manipulated Video, Authentic Speech)"
+                    vis_desc = vision_res.get("verdict", "Visual Deepfake Detected")
+                    verdict_title = f"{vis_desc} (Authentic Speech)"
                     overall_prediction = "fake"
                     overall_conf = round(visual_conf, 4)
                 elif audio_fake and not visual_fake:
@@ -269,14 +335,17 @@ class UnifiedDeepfakeDetector:
                     overall_prediction = "real"
                     overall_conf = round(min(audio_conf, visual_conf), 4)
             else:
+                # Video without active audio: Pure visual verdict.
+                # Audio subsystem was not activated and does NOT tip the scales.
                 if visual_fake:
                     av_label = "visual_modified"
-                    verdict_title = "Face / Visual Deepfake (Silent Video)"
+                    vis_desc = vision_res.get("verdict", "Visual Deepfake Detected")
+                    verdict_title = f"{vis_desc} (No Audio Stream)"
                     overall_prediction = "fake"
                     overall_conf = round(visual_conf, 4)
                 else:
                     av_label = "real"
-                    verdict_title = "Authentic Video (Silent Media)"
+                    verdict_title = "Authentic Video (No Audio Stream)"
                     overall_prediction = "real"
                     overall_conf = round(visual_conf, 4)
 

@@ -42,22 +42,41 @@ Predictions are mapped to the ACM Multimedia benchmark classification standard:
 
 ```
 f:\DeepFake\
-├── model/                     # Local Wav2Vec2 weights and configs
-│   ├── config.json
-│   ├── model.safetensors
-│   └── preprocessor_config.json
-├── AV-Deepfake1M/             # Benchmark dataset & research models (Xception, BA-TFD)
-│   ├── examples/
-│   │   ├── batfd/             # Boundary-Aware Temporal Face Deepfake models (C3D, MViT)
-│   │   └── xception/          # XceptionNet video frame classifier
-│   └── ...
-├── detector.py                # Core Wav2Vec2 audio detection engine
-├── vision_detector.py         # Computer Vision facial & temporal artifact detector
-├── multimodal_detector.py     # Unified Audio-Visual fusion & localization coordinator
-├── server.py                  # FastAPI server & interactive Web Dashboard
+├── frontend/                  # Decoupled Web UI (Simple, Clean)
+│   ├── index.html             # Clean media upload & results dashboard
+│   ├── style.css              # Modern dark-mode styling
+│   └── app.js                 # API client & UI event handlers
+├── backend/                   # FastAPI Backend Server & REST API
+│   ├── main.py                # FastAPI application, CORS, static mounts
+│   ├── routes/                # Modular route controllers
+│   │   ├── health.py          # /api/health and /api/info
+│   │   ├── predict.py         # /api/predict multimodal inference
+│   │   └── samples.py         # /samples/{filename} reference benchmarks
+│   └── tests/                 # Automated test suite
+│       └── test_system.py
+├── ai_models/                 # AI Deepfake Detection & Forensics
+│   ├── audio/                 # Speech detection (Wav2Vec2 transformer)
+│   │   └── detector.py
+│   ├── vision/                # Computer vision forensics (Facial, FFT, Temporal)
+│   │   └── vision_detector.py
+│   ├── multimodal/            # AV-Deepfake1M multimodal fusion & localization
+│   │   └── multimodal_detector.py
+│   ├── weights/               # Local model checkpoints & configs
+│   │   ├── config.json
+│   │   ├── model.safetensors
+│   │   └── preprocessor_config.json
+│   ├── training/              # LoRA fine-tuning & evaluation scripts
+│   │   ├── finetune_lora.py
+│   │   ├── evaluate_benchmark.py
+│   │   ├── compare_models.py
+│   │   └── download_model.py
+│   └── benchmarks/            # AV-Deepfake1M benchmark dataset & examples
+│       └── AV-Deepfake1M/
+├── samples/                   # Reference benchmark audio samples
+├── predict_cli.py             # Multimodal CLI prediction tool
 ├── app_gradio.py              # Multimodal Gradio interface
-├── predict_cli.py             # Multimodal CLI tool
-├── test_system.py             # Automated test suite (audio, video, API)
+├── server.py                  # Server entrypoint wrapper
+├── test_system.py             # System test runner
 ├── start_server.bat           # 1-click Windows launcher for FastAPI
 ├── start_gradio.bat           # 1-click Windows launcher for Gradio
 ├── requirements.txt           # Python package dependencies

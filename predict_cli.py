@@ -16,7 +16,10 @@ if hasattr(sys.stdout, "reconfigure"):
     except Exception:
         pass
 
-from multimodal_detector import UnifiedDeepfakeDetector
+try:
+    from ai_models.multimodal.multimodal_detector import UnifiedDeepfakeDetector
+except ImportError:
+    from multimodal_detector import UnifiedDeepfakeDetector
 
 
 def main():
@@ -61,7 +64,12 @@ def main():
 
     # Audio details
     audio_res = result.get("audio_analysis", {})
-    if audio_res.get("status") != "no_audio_stream":
+    is_audio_active = (
+        audio_res.get("activated", True)
+        and audio_res.get("probabilities") is not None
+        and audio_res.get("status") not in ["not_active", "no_audio_stream"]
+    )
+    if is_audio_active:
         print("🎙️ AUDIO / SPEECH BREAKDOWN:")
         print(f"   Prediction:          {audio_res.get('prediction', 'N/A').upper()}")
         if audio_res.get("probabilities"):
@@ -70,7 +78,8 @@ def main():
         if audio_res.get("audio_fake_segments"):
             print(f"   Fake Audio Windows:  {audio_res['audio_fake_segments']}")
     else:
-        print("🎙️ AUDIO / SPEECH BREAKDOWN: Silent Media (No Audio Track)")
+        print("🎙️ AUDIO / SPEECH BREAKDOWN: DEACTIVATED (Silent / No Audio Track)")
+        print(f"   Note:                {audio_res.get('note', 'Audio subsystem was not activated.')}")
 
     # Visual details
     visual_res = result.get("visual_analysis", {})
