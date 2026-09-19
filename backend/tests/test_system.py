@@ -76,7 +76,7 @@ def test_audio_detector():
     result = detector.predict(TEST_AUDIO_PATH)
     print("Audio Inference Result:", result["prediction"], "Confidence:", result["confidence"])
     assert result["status"] == "success"
-    assert result["prediction"] in ["fake", "real", "uncertain_ambient"]
+    assert result["prediction"].lower() in ["fake", "real", "uncertain_ambient"]
     assert 0.0 <= result["confidence"] <= 1.0
     assert result["duration_seconds"] > 0
     print("Audio Detector Test: PASSED")

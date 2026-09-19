@@ -367,17 +367,22 @@ class DeepfakeAudioDetector:
 
         processing_time = round(time.perf_counter() - start_time, 3)
 
+        conf = round(max(agg_fake_prob, agg_real_prob), 4)
         return {
+            "status": "success",
             "prediction": prediction,
+            "is_fake": is_fake,
+            "confidence": conf,
+            "calibrated_confidence": conf,
             "real_probability": round(agg_real_prob, 4),
             "fake_probability": round(agg_fake_prob, 4),
-            "calibrated_confidence": round(max(agg_fake_prob, agg_real_prob), 4),
             "threshold": fake_threshold,
             "model": "Wav2Vec2 Deepfake Detector",
             "chunks_analyzed": total_chunks,
             "fake_chunks": fake_chunks_count,
             "temporal_segments": temporal_segments,
             "duration": metadata["duration_seconds"],
+            "duration_seconds": metadata["duration_seconds"],
             "preprocessing_metadata": metadata,
             "chunk_details": chunks_info,
             "inference_time_seconds": processing_time
