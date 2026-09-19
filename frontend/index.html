@@ -61,33 +61,33 @@
             </div>
         </section>
 
-        <!-- Live Talk Card (Voice Only) -->
-        <section class="card live-card" id="liveTalkCard" style="margin-bottom: 2rem; display: none;">
-            <div class="results-header">
-                <h2>🎙️ Live Talk Forensics</h2>
-                <div class="verdict-badge" style="background: rgba(255, 255, 255, 0.1);">Presentation Mode</div>
-            </div>
-            <p>Record live microphone audio to test the system in real-time. The forensic graph will visualize your speech patterns.</p>
-            
-            <div class="live-controls" style="display: flex; gap: 1rem; margin-top: 1rem; align-items: center;">
-                <button type="button" id="btnLiveStart" class="btn-primary" style="background: #ef4444;">🔴 Start Recording</button>
-                <button type="button" id="btnLiveStop" class="btn-primary" style="background: #64748b; display: none;">⏹️ Stop & Analyze</button>
-                <span id="liveTimer" style="font-family: monospace; font-size: 1.2rem; color: #94a3b8; display: none;">00:00</span>
-                <a id="btnLiveDownload" class="btn-primary" style="background: #3b82f6; display: none; text-decoration: none;" download="live_audio_mic.wav">⬇️ Download Recording</a>
-            </div>
-
-            <!-- Visualization Canvas -->
-            <div style="margin-top: 1.5rem; background: #0f172a; border-radius: 8px; padding: 10px; border: 1px solid #334155;">
-                <canvas id="liveGraph" width="800" height="150" style="width: 100%; height: 150px; display: block; border-radius: 4px;"></canvas>
-            </div>
-        </section>
-
-        <!-- Detection Card -->
+        <!-- Unified Forensics & Detection Card -->
         <section class="card upload-card">
             <!-- Error Banner -->
             <div id="errorBanner" class="error-banner" style="display: none;">
                 <span class="error-icon">⚠️</span>
                 <span id="errorMessage" class="error-message"></span>
+            </div>
+
+            <!-- Live Talk Section (Voice Only - Integrated) -->
+            <div id="liveTalkCard" style="margin-bottom: 1.5rem; padding-bottom: 1.5rem; border-bottom: 1px solid var(--border); display: none;">
+                <div class="results-header" style="margin-bottom: 12px; padding-bottom: 10px;">
+                    <h2>🎙️ Live Talk Forensics</h2>
+                    <div class="verdict-badge" style="background: rgba(255, 255, 255, 0.1);">Presentation Mode</div>
+                </div>
+                <p style="color: var(--text-muted); font-size: 0.9rem; margin-bottom: 12px;">Record live microphone audio to test the system in real-time. The forensic graph will visualize your speech patterns.</p>
+                
+                <div class="live-controls" style="display: flex; gap: 1rem; align-items: center; flex-wrap: wrap;">
+                    <button type="button" id="btnLiveStart" class="btn-primary" style="background: #ef4444;">🔴 Start Recording</button>
+                    <button type="button" id="btnLiveStop" class="btn-primary" style="background: #64748b; display: none;">⏹️ Stop & Analyze</button>
+                    <span id="liveTimer" style="font-family: monospace; font-size: 1.2rem; color: #94a3b8; display: none;">00:00</span>
+                    <a id="btnLiveDownload" class="btn-primary" style="background: #3b82f6; display: none; text-decoration: none;" download="live_audio_mic.wav">⬇️ Download Recording</a>
+                </div>
+
+                <!-- Visualization Canvas -->
+                <div style="margin-top: 1rem; background: #0f172a; border-radius: 8px; padding: 10px; border: 1px solid #334155;">
+                    <canvas id="liveGraph" width="800" height="150" style="width: 100%; height: 150px; display: block; border-radius: 4px;"></canvas>
+                </div>
             </div>
 
             <div class="controls-bar">
