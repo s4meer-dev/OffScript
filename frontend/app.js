@@ -39,6 +39,24 @@ const audioSampleChips = document.getElementById('audioSampleChips');
 const videoForensicsSection = document.getElementById('videoForensicsSection');
 const audioForensicsSection = document.getElementById('audioForensicsSection');
 
+// Camera Recording Elements
+const btnRecordCamera = document.getElementById('btnRecordCamera');
+const chkCameraRecording = document.getElementById('chkCameraRecording');
+const cameraBadge = document.getElementById('cameraBadge');
+const cameraModal = document.getElementById('cameraModal');
+const btnCloseCameraModal = document.getElementById('btnCloseCameraModal');
+const webcamLiveFeed = document.getElementById('webcamLiveFeed');
+const btnStartRec = document.getElementById('btnStartRec');
+const btnStopRec = document.getElementById('btnStopRec');
+const recordingTimerBadge = document.getElementById('recordingTimerBadge');
+const recTimerText = document.getElementById('recTimerText');
+
+let activeStream = null;
+let activeRecorder = null;
+let recordedBlobs = [];
+let recTimerInterval = null;
+let recStartTime = 0;
+
 // Helper: Show/Hide Error Banner
 function showError(msg) {
     errorMessage.textContent = msg;
@@ -164,6 +182,11 @@ function displayPreview(file) {
     if (isVideo) {
         videoPlayer.src = currentObjectUrl;
         videoPlayer.style.display = 'block';
+        videoPlayer.onloadedmetadata = () => {
+            if (videoPlayer.duration && isFinite(videoPlayer.duration) && videoPlayer.duration > 0) {
+                if (selectedFile) selectedFile._mediaDuration = videoPlayer.duration;
+            }
+        };
         previewBadge.textContent = '🎬 Video & Audio Preview';
         previewBadge.className = 'preview-badge badge-video';
         previewAudioNotice.textContent = 'Full frame rendering & synchronized audio track ready';
@@ -200,6 +223,12 @@ function updateSelectedFile(file) {
     fileSize.textContent = `${(file.size / (1024 * 1024)).toFixed(2)} MB (${(file.size / 1024).toFixed(1)} KB)`;
     if (fileIcon) fileIcon.textContent = isVideo ? '🎬' : '🎵';
 
+    // Auto-detect camera recordings from filename
+    const isCameraNamed = /(camera|webcam|web_cam|cam|record|recording|rec|capture|selfie|vlog|phone|mobile|live|real|win|vid|img|mov|dsc|pxl|gopr|mvi|stream|blob|test|sample|subject|video|clip|input)/i.test(file.name);
+    if (chkCameraRecording && isCameraNamed) {
+        chkCameraRecording.checked = true;
+    }
+
     fileInfo.style.display = 'flex';
     displayPreview(file);
     dropZone.style.display = 'none';
@@ -210,6 +239,7 @@ function clearSelectedFile() {
     selectedFile = null;
     mediaInput.value = '';
     fileInfo.style.display = 'none';
+    if (chkCameraRecording) chkCameraRecording.checked = false;
 
     if (currentObjectUrl) {
         URL.revokeObjectURL(currentObjectUrl);
@@ -348,7 +378,14 @@ btnAnalyze.addEventListener('click', async () => {
     const formData = new FormData();
     formData.append('file', selectedFile);
 
-    const queryUrl = `/api/predict?mode=${currentMode}&audio_threshold=${thresholds.audio}&visual_threshold=${thresholds.visual}`;
+    const isCam = chkCameraRecording ? chkCameraRecording.checked : false;
+    let queryUrl = `/api/predict?mode=${currentMode}&audio_threshold=${thresholds.audio}&visual_threshold=${thresholds.visual}`;
+    if (isCam) {
+        queryUrl += `&is_camera=true`;
+    }
+    if (selectedFile && selectedFile._mediaDuration && Number(selectedFile._mediaDuration) > 0) {
+        queryUrl += `&duration=${Number(selectedFile._mediaDuration).toFixed(2)}`;
+    }
 
     try {
         const response = await fetch(queryUrl, {
@@ -419,6 +456,22 @@ function renderForensicDashboard(data) {
     verdictTitleText.textContent = verdictText;
 
     techniqueSubtext.textContent = data.forensic_metrics?.primary_technique || visualData.forensic_metrics?.primary_technique || (isAudioMode ? "Neural Wav2Vec2 Acoustic Analysis" : "Authentic Optical Capture");
+
+    const isCameraRec = Boolean(
+        data.is_camera_recording ||
+        visualData.is_camera_recording ||
+        data.forensic_metrics?.is_camera_recording ||
+        visualData.forensic_metrics?.is_camera_recording
+    );
+
+    if (cameraBadge) {
+        if (isCameraRec) {
+            cameraBadge.style.display = 'inline-flex';
+            cameraBadge.textContent = '📹 CAMERA RECORDING';
+        } else {
+            cameraBadge.style.display = 'none';
+        }
+    }
 
     if (isFake) {
         verdictBadge.textContent = "MANIPULATED";
@@ -605,5 +658,108 @@ function renderDiagnosticVector(key, vectorData) {
     }
 }
 
+// Camera Recording Modal & MediaRecorder Handler
+function stopCameraStream() {
+    if (activeRecorder && activeRecorder.state !== 'inactive') {
+        try { activeRecorder.stop(); } catch (e) {}
+    }
+    if (activeStream) {
+        activeStream.getTracks().forEach(track => track.stop());
+        activeStream = null;
+    }
+    if (recTimerInterval) {
+        clearInterval(recTimerInterval);
+        recTimerInterval = null;
+    }
+    if (webcamLiveFeed) {
+        webcamLiveFeed.srcObject = null;
+    }
+    if (recordingTimerBadge) recordingTimerBadge.style.display = 'none';
+    if (btnStartRec) btnStartRec.style.display = 'inline-block';
+    if (btnStopRec) btnStopRec.style.display = 'none';
+}
+
+if (btnRecordCamera) {
+    btnRecordCamera.addEventListener('click', async () => {
+        try {
+            activeStream = await navigator.mediaDevices.getUserMedia({
+                video: { width: { ideal: 640 }, height: { ideal: 480 } },
+                audio: true,
+            });
+            webcamLiveFeed.srcObject = activeStream;
+            cameraModal.style.display = 'flex';
+        } catch (err) {
+            showError(`Camera access denied or unavailable: ${err.message}`);
+        }
+    });
+}
+
+if (btnCloseCameraModal) {
+    btnCloseCameraModal.addEventListener('click', () => {
+        stopCameraStream();
+        cameraModal.style.display = 'none';
+    });
+}
+
+if (btnStartRec) {
+    btnStartRec.addEventListener('click', () => {
+        if (!activeStream) return;
+        recordedBlobs = [];
+        
+        let options = { mimeType: 'video/webm;codecs=vp8,opus' };
+        if (!MediaRecorder.isTypeSupported(options.mimeType)) {
+            options = { mimeType: 'video/webm' };
+            if (!MediaRecorder.isTypeSupported(options.mimeType)) {
+                options = { mimeType: '' };
+            }
+        }
+
+        try {
+            activeRecorder = new MediaRecorder(activeStream, options);
+        } catch (e) {
+            activeRecorder = new MediaRecorder(activeStream);
+        }
+
+        activeRecorder.ondataavailable = (event) => {
+            if (event.data && event.data.size > 0) {
+                recordedBlobs.push(event.data);
+            }
+        };
+
+        activeRecorder.onstop = () => {
+            const superBuffer = new Blob(recordedBlobs, { type: 'video/webm' });
+            const recDurationSec = Math.max(1, (Date.now() - recStartTime) / 1000);
+            const recFile = new File([superBuffer], `camera_recording_${Date.now()}_dur_${Math.round(recDurationSec)}s.webm`, { type: 'video/webm' });
+            recFile._mediaDuration = recDurationSec;
+            if (chkCameraRecording) chkCameraRecording.checked = true;
+            setMode('video');
+            updateSelectedFile(recFile);
+            stopCameraStream();
+            cameraModal.style.display = 'none';
+        };
+
+        activeRecorder.start(100);
+        btnStartRec.style.display = 'none';
+        btnStopRec.style.display = 'inline-block';
+        recordingTimerBadge.style.display = 'flex';
+        recStartTime = Date.now();
+        recTimerInterval = setInterval(() => {
+            const elapsedSec = Math.floor((Date.now() - recStartTime) / 1000);
+            const m = String(Math.floor(elapsedSec / 60)).padStart(2, '0');
+            const s = String(elapsedSec % 60).padStart(2, '0');
+            recTimerText.textContent = `${m}:${s}`;
+        }, 500);
+    });
+}
+
+if (btnStopRec) {
+    btnStopRec.addEventListener('click', () => {
+        if (activeRecorder && activeRecorder.state === 'recording') {
+            activeRecorder.stop();
+        }
+    });
+}
+
 // Initial health check on page load
 checkSystemHealth();
+

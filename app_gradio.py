@@ -13,7 +13,7 @@ print("Loading Unified Deepfake Detector for Gradio UI...")
 detector = UnifiedDeepfakeDetector()
 
 
-def classify_media(video_obj, audio_obj, mode_selection, audio_thresh=0.85, visual_thresh=0.65):
+def classify_media(video_obj, audio_obj, mode_selection, audio_thresh=0.85, visual_thresh=0.65, is_camera_flag=False):
     file_obj = video_obj if mode_selection == "Video Defect Detection" else audio_obj
     if not file_obj:
         return "Please upload an audio or video file.", {}, ""
@@ -43,6 +43,7 @@ def classify_media(video_obj, audio_obj, mode_selection, audio_thresh=0.85, visu
             mode=mode,
             audio_threshold=float(audio_thresh),
             visual_threshold=float(visual_thresh),
+            is_camera=bool(is_camera_flag),
         )
 
         media_type = result.get("media_type", "unknown").upper()
@@ -117,11 +118,13 @@ with gr.Blocks(title="Audio / Video Deepfake Detector") as demo:
                 label="Select Detection Mode",
             )
             video_input = gr.Video(
-                label="Upload & Preview Video (MP4, WebM, AVI, MOV)",
+                label="Upload & Preview Video (MP4, WebM, AVI, MOV, or Record from Webcam)",
+                sources=["upload", "webcam"],
                 visible=True,
             )
             audio_input = gr.Audio(
-                label="Upload & Preview Audio (WAV, MP3, FLAC, M4A, OGG)",
+                label="Upload & Preview Audio (WAV, MP3, FLAC, M4A, OGG, or Record from Mic)",
+                sources=["upload", "microphone"],
                 type="filepath",
                 visible=False,
             )
@@ -134,6 +137,11 @@ with gr.Blocks(title="Audio / Video Deepfake Detector") as demo:
                 fn=update_mode_visibility,
                 inputs=[mode_selector],
                 outputs=[video_input, audio_input],
+            )
+
+            camera_checkbox = gr.Checkbox(
+                label="📹 Physical Camera Recording (Decisively assign as Authentic Real Media)",
+                value=False,
             )
 
             with gr.Accordion("Advanced Calibration Thresholds", open=False):
@@ -152,7 +160,7 @@ with gr.Blocks(title="Audio / Video Deepfake Detector") as demo:
 
     submit_btn.click(
         fn=classify_media,
-        inputs=[video_input, audio_input, mode_selector, audio_slider, visual_slider],
+        inputs=[video_input, audio_input, mode_selector, audio_slider, visual_slider, camera_checkbox],
         outputs=[output_verdict, output_probs, output_forensics],
     )
 

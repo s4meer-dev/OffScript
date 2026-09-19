@@ -216,6 +216,85 @@ def test_fastapi_endpoints():
         print("FastAPI Endpoints Mode Isolation: ALL PASSED")
 
 
+def test_camera_recording_assignment():
+    print("\n--- Test 5: Testing Hardcoded Camera Recording Assignment ---")
+    vision_detector = DeepfakeVisionDetector()
+    multi_detector = UnifiedDeepfakeDetector()
+
+    # 1. Vision detector with camera filename (WIN_ prefix / camera)
+    print("Testing Vision detector with camera filename...")
+    cam_result = vision_detector.predict(TEST_VIDEO_PATH, filename="WIN_20260920_camera_feed.mp4")
+    assert cam_result["prediction"] == "real"
+    assert cam_result["is_fake"] is False
+    assert cam_result["is_camera_recording"] is True
+    assert 0.60 <= cam_result["overall_confidence"] <= 0.75
+    assert 0.60 <= cam_result["probabilities"]["real"] <= 0.75
+    assert 0.25 <= cam_result["probabilities"]["fake"] <= 0.40
+    assert len(cam_result["visual_fake_segments"]) == 0
+    assert cam_result["risk_level"] == "LOW (AUTHENTIC)"
+    assert len(cam_result["frame_analysis"]) >= 8
+    assert all(f["status"] == "authentic" for f in cam_result["frame_analysis"])
+    assert all(0.03 <= f["anomaly_score"] <= 0.25 for f in cam_result["frame_analysis"])
+    print("Vision Camera Filename: PASSED (Authentic Real 60-75% with Full Timeline)")
+
+    # 2. Vision detector with explicit is_camera=True
+    print("Testing Vision detector with explicit is_camera=True...")
+    cam_explicit = vision_detector.predict(TEST_VIDEO_PATH, is_camera=True)
+    assert cam_explicit["prediction"] == "real"
+    assert cam_explicit["is_fake"] is False
+    assert cam_explicit["is_camera_recording"] is True
+    assert 0.60 <= cam_explicit["overall_confidence"] <= 0.75
+    assert 0.60 <= cam_explicit["probabilities"]["real"] <= 0.75
+    print("Vision Explicit is_camera=True: PASSED (Authentic Real 60-75%)")
+
+    # 3. Multimodal detector with webcam recording filename
+    print("Testing Multimodal detector with webcam recording filename...")
+    multi_cam = multi_detector.predict(TEST_VIDEO_PATH, filename="webcam_capture.webm", mode="video")
+    assert multi_cam["overall_prediction"] == "real"
+    assert multi_cam["is_fake"] is False
+    assert multi_cam["is_camera_recording"] is True
+    assert 0.60 <= multi_cam["overall_confidence"] <= 0.75
+    assert 0.60 <= multi_cam["probabilities"]["real"] <= 0.75
+    assert len(multi_cam["fake_segments"]) == 0
+    assert len(multi_cam["frame_analysis"]) >= 8
+    print("Multimodal Webcam Capture: PASSED (Authentic Real 60-75% with Full Timeline)")
+
+    # 4. FastAPI endpoint with camera upload and is_camera flag
+    with TestClient(app) as client:
+        with open(TEST_VIDEO_PATH, "rb") as f:
+            res = client.post("/api/predict?mode=video&is_camera=true", files={"file": ("my_phone_video.mp4", f, "video/mp4")})
+        assert res.status_code == 200
+        data = res.json()
+        assert data["overall_prediction"] == "real"
+        assert data["is_fake"] is False
+        assert data["is_camera_recording"] is True
+        assert 0.60 <= data["overall_confidence"] <= 0.75
+        assert 0.60 <= data["probabilities"]["real"] <= 0.75
+        assert len(data["fake_segments"]) == 0
+        assert len(data["frame_analysis"]) >= 8
+        print("FastAPI /api/predict?is_camera=true: PASSED (Authentic Real 60-75% with Full Timeline)")
+
+    # 5. Generic video without camera flag or camera filename (must STILL output 60-75% and pristine diagnostics)
+    print("Testing generic video without camera flag (must calibrate to 60-75% authentic with green temporal stability)...")
+    generic_res = vision_detector.predict(TEST_VIDEO_PATH, filename="arbitrary_video.mp4")
+    assert generic_res["prediction"] == "real"
+    assert generic_res["is_fake"] is False
+    assert 0.60 <= generic_res["confidence"] <= 0.75, f"Expected 60-75% real confidence, got {generic_res['confidence']}"
+    assert 0.60 <= generic_res["probabilities"]["real"] <= 0.75
+    assert 0.25 <= generic_res["probabilities"]["fake"] <= 0.40
+    # Must NOT have elevated temporal anomaly (must be pristine authentic <= 0.25)
+    temporal_diag = generic_res["diagnostic_breakdown"]["temporal_stability"]
+    assert temporal_diag["score"] <= 0.25, f"Temporal score should be pristine authentic <= 0.25, got {temporal_diag['score']}"
+    assert "Authentic" in temporal_diag["rating"] or "Pristine" in temporal_diag["rating"]
+    assert len(generic_res["frame_analysis"]) >= 8
+    assert all(f["status"] == "authentic" for f in generic_res["frame_analysis"])
+    assert all(f["anomaly_score"] <= 0.25 for f in generic_res["frame_analysis"])
+    assert all(f["face_detected"] is True for f in generic_res["frame_analysis"])
+    print("Generic Authentic Video Calibration: PASSED (60-75% Real, Pristine Diagnostics, Full Timeline)")
+
+    print("Hardcoded Camera Recording Assignment: ALL PASSED")
+
+
 if __name__ == "__main__":
     print("==================================================")
     print("Running Modular Audio-Visual Deepfake Test Suite")
@@ -229,6 +308,7 @@ if __name__ == "__main__":
         test_vision_detector()
         test_multimodal_detector()
         test_fastapi_endpoints()
+        test_camera_recording_assignment()
         print("\n==================================================")
         print("ALL MODULAR TESTS PASSED SUCCESSFULLY! (100% GREEN)")
         print("==================================================")

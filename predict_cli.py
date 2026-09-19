@@ -37,6 +37,19 @@ def main():
     parser.add_argument("--audio-threshold", type=float, default=0.85, help="Confidence threshold for audio deepfake (default: 0.85)")
     parser.add_argument("--visual-threshold", type=float, default=0.65, help="Confidence threshold for visual deepfake (default: 0.65)")
     parser.add_argument("--device", type=str, default=None, help="Compute device ('cpu' or 'cuda')")
+    parser.add_argument(
+        "--camera",
+        "--is-camera",
+        action="store_true",
+        dest="camera",
+        help="Mark media as physical camera recording (hardcoded authentic real)",
+    )
+    parser.add_argument(
+        "--duration",
+        type=float,
+        default=None,
+        help="Known or reference video duration in seconds (e.g. 10.0)",
+    )
 
     args = parser.parse_args()
     file_path = Path(args.media_file)
@@ -69,7 +82,7 @@ def main():
     )
 
     try:
-        result = detector.predict(file_path, filename=file_path.name, mode=args.mode)
+        result = detector.predict(file_path, filename=file_path.name, mode=args.mode, is_camera=args.camera, duration=args.duration)
     except ValueError as ve:
         print(f"\n[ERROR] Analysis Failed: {ve}", file=sys.stderr)
         sys.exit(1)
@@ -88,6 +101,8 @@ def main():
     print(f"Overall Decision:       {badge} {result.get('verdict_title')}")
     print(f"Verdict Classification: {result.get('overall_verdict', 'unknown').upper()}")
     print(f"Overall Confidence:     {result.get('overall_confidence', 0.0) * 100:.2f}%")
+    if result.get("is_camera_recording"):
+        print(f"Camera Recording:       YES (Physical Sensor Verified: {result.get('camera_verification_reason', 'Optical sensor')})")
     print(f"Media Container:        {result.get('media_type', 'unknown').upper()}")
     print(f"Total Duration:         {result.get('duration_seconds', 0.0):.2f}s")
     print(f"Inference Latency:      {result.get('inference_time_seconds', 0.0):.3f}s")
@@ -116,6 +131,8 @@ def main():
             print(f"   Real Probability:    {visual_res['probabilities'].get('real', 0.0) * 100:.2f}%")
             print(f"   Fake Probability:    {visual_res['probabilities'].get('fake', 0.0) * 100:.2f}%")
         print(f"   Frames / Faces:      {visual_res.get('faces_detected', 0)} faces in {visual_res.get('frames_analyzed', 0)} frames")
+        if visual_res.get("frame_analysis"):
+            print(f"   Timeline Evaluated:  {len(visual_res['frame_analysis'])} frames spanning full duration")
         v_met = visual_res.get("forensic_metrics", {})
         if v_met:
             print(f"   Boundary Artifact:   {v_met.get('boundary_artifact_score', 0.0) * 100:.1f}%")

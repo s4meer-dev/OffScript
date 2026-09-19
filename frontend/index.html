@@ -89,6 +89,18 @@
                 </div>
             </div>
 
+            <!-- Camera Recording Quick Action -->
+            <div class="camera-action-bar">
+                <button type="button" id="btnRecordCamera" class="btn-camera">
+                    <span class="camera-btn-icon">📹</span>
+                    <span>Record Live from Camera / Webcam</span>
+                </button>
+                <label class="camera-checkbox-label">
+                    <input type="checkbox" id="chkCameraRecording">
+                    <span>Physical Camera Recording Mode</span>
+                </label>
+            </div>
+
             <!-- Drag & Drop Zone -->
             <div class="drop-zone" id="dropZone">
                 <input type="file" id="mediaInput" accept="video/*" class="file-input">
@@ -147,6 +159,7 @@
                     <p id="techniqueSubtext" class="verdict-technique-subtext">Authentic Capture</p>
                 </div>
                 <div class="verdict-badge-group">
+                    <div id="cameraBadge" class="camera-badge" style="display: none;">📹 CAMERA RECORDING</div>
                     <div id="riskBadge" class="risk-badge risk-low">LOW RISK</div>
                     <div id="verdictBadge" class="verdict-badge verdict-real">Authentic</div>
                 </div>
@@ -372,6 +385,28 @@
     <footer class="app-footer">
         <p>Multimodal Deepfake Detector & Video Forensics AI &copy; 2026 | Powered by Computer Vision & Wav2Vec2</p>
     </footer>
+
+    <!-- Webcam Live Recording Modal -->
+    <div id="cameraModal" class="modal-overlay" style="display: none;">
+        <div class="modal-card">
+            <div class="modal-header">
+                <h3>📹 Live Camera Video Recorder</h3>
+                <button type="button" id="btnCloseCameraModal" class="btn-close-modal" title="Close">✕</button>
+            </div>
+            <div class="modal-body">
+                <div class="camera-preview-wrapper">
+                    <video id="webcamLiveFeed" autoplay playsinline muted></video>
+                    <div id="recordingTimerBadge" class="rec-timer-badge" style="display: none;">
+                        <span class="rec-dot"></span> <span id="recTimerText">00:00</span>
+                    </div>
+                </div>
+                <div class="camera-controls">
+                    <button type="button" id="btnStartRec" class="btn-record-action">🔴 Start Recording</button>
+                    <button type="button" id="btnStopRec" class="btn-stop-action" style="display: none;">⏹️ Stop & Analyze</button>
+                </div>
+            </div>
+        </div>
+    </div>
 
     <script src="/static/app.js"></script>
 </body>

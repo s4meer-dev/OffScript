@@ -13,6 +13,8 @@ async def predict_media(
     audio_threshold: Optional[float] = Query(None, ge=0.50, le=0.99, description="Audio deepfake threshold"),
     visual_threshold: Optional[float] = Query(None, ge=0.40, le=0.95, description="Visual deepfake threshold"),
     threshold: Optional[float] = Query(None, ge=0.50, le=0.99, description="Legacy threshold alias"),
+    is_camera: Optional[bool] = Query(None, description="Explicit flag indicating media originated from a camera recording"),
+    duration: Optional[float] = Query(None, description="Known or client-measured media duration in seconds"),
 ):
     detector = getattr(request.app.state, "detector", None)
     if detector is None:
@@ -36,6 +38,8 @@ async def predict_media(
             mode=mode,
             audio_threshold=a_thresh,
             visual_threshold=v_thresh,
+            is_camera=is_camera,
+            duration=duration,
         )
         result["filename"] = file.filename
         return JSONResponse(content=result)
