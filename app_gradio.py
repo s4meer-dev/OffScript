@@ -13,48 +13,61 @@ print("Loading Unified Deepfake Detector for Gradio UI...")
 detector = UnifiedDeepfakeDetector()
 
 
-def classify_media(file_obj, audio_thresh=0.85, visual_thresh=0.65):
+def classify_media(file_obj, mode_selection, audio_thresh=0.85, visual_thresh=0.65):
     if not file_obj:
         return "Please upload an audio or video file.", {}, ""
 
     try:
+        mode = "audio" if mode_selection == "Audio Defect Detection" else "video"
         file_path = file_obj if isinstance(file_obj, str) else getattr(file_obj, "name", str(file_obj))
+
         result = detector.predict(
             file_path,
+            mode=mode,
             audio_threshold=float(audio_thresh),
             visual_threshold=float(visual_thresh),
         )
 
         media_type = result.get("media_type", "unknown").upper()
-        av_class = result.get("overall_verdict", "real").upper()
+        verdict_str = result.get("overall_verdict", "real").upper()
         is_fake = result.get("is_fake", False)
         verdict_title = result.get("verdict_title", "")
         conf = result.get("overall_confidence", 0.0) * 100
 
-        audio_res = result.get("audio_analysis", {})
-        visual_res = result.get("visual_analysis", {})
-
-        is_audio_active = (
-            audio_res.get("activated", True)
-            and audio_res.get("probabilities") is not None
-            and audio_res.get("status") not in ["not_active", "no_audio_stream"]
-        )
+        audio_res = result.get("audio_analysis")
+        visual_res = result.get("visual_analysis")
 
         probs = {}
-        if is_audio_active:
-            probs["Audio: Authentic Voice"] = audio_res["probabilities"]["real"]
-            probs["Audio: Synthetic / Fake"] = audio_res["probabilities"]["fake"]
-        if visual_res.get("probabilities"):
-            probs["Visual: Authentic Video"] = visual_res["probabilities"]["real"]
-            probs["Visual: Facial Deepfake"] = visual_res["probabilities"]["fake"]
+        forensic_md = "### Detailed Forensic Metrics:\n"
+
+        if mode == "audio" and audio_res:
+            if audio_res.get("probabilities"):
+                probs["Audio: Authentic Voice"] = audio_res["probabilities"].get("real", 0.0)
+                probs["Audio: Synthetic / Fake"] = audio_res["probabilities"].get("fake", 0.0)
+            forensic_md += f"- **Acoustic Verdict:** {audio_res.get('prediction', 'N/A')}\n"
+            if audio_res.get("bandwidth_analysis"):
+                forensic_md += f"- **Narrowband (<4kHz):** {audio_res['bandwidth_analysis'].get('is_narrowband')}\n"
+                forensic_md += f"- **High-Frequency Ratio:** {audio_res['bandwidth_analysis'].get('high_freq_ratio')}\n"
+        elif mode == "video" and visual_res:
+            if visual_res.get("probabilities"):
+                probs["Visual: Authentic Video"] = visual_res["probabilities"].get("real", 0.0)
+                probs["Visual: Facial Deepfake"] = visual_res["probabilities"].get("fake", 0.0)
+            v_met = visual_res.get("forensic_metrics", {})
+            forensic_md += (
+                f"- **Visual Frames / Faces:** {visual_res.get('faces_detected', 0)} faces in {visual_res.get('frames_analyzed', 0)} frames\n"
+                f"- **Boundary Artifact Score:** {v_met.get('boundary_artifact_score', 0.0) * 100:.1f}%\n"
+                f"- **2D FFT Frequency Anomaly:** {v_met.get('fft_frequency_score', 0.0) * 100:.1f}%\n"
+                f"- **Temporal Motion Flicker:** {v_met.get('temporal_flicker_score', 0.0) * 100:.1f}%\n"
+            )
 
         verdict_icon = "🚨" if is_fake else "✅"
         summary = (
             f"## {verdict_icon} {verdict_title}\n\n"
-            f"- **AV-Deepfake1M Class:** `{av_class}`\n"
-            f"- **Overall Confidence:** **{conf:.2f}%**\n"
-            f"- **Media Format:** {media_type}\n"
-            f"- **Total Duration:** {result.get('duration_seconds', 0.0):.2f}s\n"
+            f"- **Detection Mode:** `{mode_selection}`\n"
+            f"- **Verdict:** `{verdict_str}`\n"
+            f"- **Confidence:** **{conf:.2f}%**\n"
+            f"- **Media Container:** {media_type}\n"
+            f"- **Duration:** {result.get('duration_seconds', 0.0):.2f}s\n"
             f"- **Inference Latency:** {result.get('inference_time_seconds', 0.0):.3f}s\n\n"
         )
 
@@ -66,41 +79,28 @@ def classify_media(file_obj, audio_thresh=0.85, visual_thresh=0.65):
         else:
             summary += "### ⏱️ Temporal Localization:\n- No tampering intervals detected.\n"
 
-        # Forensic details
-        forensic_md = "### Detailed Forensic Metrics:\n"
-        if not is_audio_active:
-            forensic_md += "- **Acoustic Subsystem:** ⏸️ Deactivated (No audio stream present in video)\n"
-        else:
-            forensic_md += f"- **Acoustic Verdict:** {audio_res.get('prediction', 'N/A')}\n"
-            if audio_res.get("bandwidth_analysis"):
-                forensic_md += f"- **Narrowband (<4kHz):** {audio_res['bandwidth_analysis'].get('is_narrowband')}\n"
-        if visual_res.get("status") != "skipped":
-            v_met = visual_res.get("forensic_metrics", {})
-            forensic_md += (
-                f"- **Visual Frames / Faces:** {visual_res.get('faces_detected', 0)} faces in {visual_res.get('frames_analyzed', 0)} frames\n"
-                f"- **Boundary Artifact Score:** {v_met.get('boundary_artifact_score', 0.0) * 100:.1f}%\n"
-                f"- **2D FFT Frequency Anomaly:** {v_met.get('fft_frequency_score', 0.0) * 100:.1f}%\n"
-                f"- **Temporal Motion Flicker:** {v_met.get('temporal_flicker_score', 0.0) * 100:.1f}%\n"
-            )
-
         return summary, probs, forensic_md
 
     except Exception as e:
-        return f"Error analyzing media: {str(e)}", {}, ""
+        return f"### ⚠️ Error Analyzing Media\n\n**{str(e)}**", {}, ""
 
 
-with gr.Blocks(title="Audio-Visual Deepfake Detector") as demo:
-    gr.Markdown("# 🛡️ Audio-Visual Deepfake Detection & Localization")
+with gr.Blocks(title="Audio / Video Deepfake Detector") as demo:
+    gr.Markdown("# 🛡️ Deepfake Defect Detection & Localization Platform")
     gr.Markdown(
-        "Unified deepfake detection integrating **Wav2Vec2** speech representations with the "
-        "**AV-Deepfake1M** computer vision temporal benchmark. Classifies media into the standard taxonomy: "
-        "`real`, `audio_modified`, `visual_modified`, or `both_modified`."
+        "Select between **Audio Defect Detection** (Wav2Vec2 speech transformer forensics) "
+        "and **Video Defect Detection** (AV-Deepfake1M facial, FFT frequency, and temporal flicker analysis)."
     )
 
     with gr.Row():
         with gr.Column():
+            mode_selector = gr.Radio(
+                ["Audio Defect Detection", "Video Defect Detection"],
+                value="Audio Defect Detection",
+                label="Select Detection Mode",
+            )
             input_file = gr.File(
-                label="Upload Audio or Video Media",
+                label="Upload Media File",
                 file_types=["audio", "video"],
             )
             with gr.Accordion("Advanced Calibration Thresholds", open=False):
@@ -110,16 +110,16 @@ with gr.Blocks(title="Audio-Visual Deepfake Detector") as demo:
                 visual_slider = gr.Slider(
                     minimum=0.40, maximum=0.95, value=0.65, step=0.05, label="Visual Fake Threshold"
                 )
-            submit_btn = gr.Button("Run Forensic Detection", variant="primary")
+            submit_btn = gr.Button("Run Defect Detection", variant="primary")
 
         with gr.Column():
-            output_verdict = gr.Markdown(label="Multimodal Verdict")
-            output_probs = gr.Label(label="Modality Probabilities", num_top_classes=4)
+            output_verdict = gr.Markdown(label="Verdict")
+            output_probs = gr.Label(label="Confidence Distribution", num_top_classes=2)
             output_forensics = gr.Markdown(label="Forensic Metrics")
 
     submit_btn.click(
         fn=classify_media,
-        inputs=[input_file, audio_slider, visual_slider],
+        inputs=[input_file, mode_selector, audio_slider, visual_slider],
         outputs=[output_verdict, output_probs, output_forensics],
     )
 

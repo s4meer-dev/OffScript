@@ -27,6 +27,13 @@ def main():
         description="Classify audio or video media as authentic or deepfake using Wav2Vec2 and AV-Deepfake1M benchmarks."
     )
     parser.add_argument("media_file", type=str, help="Path to media file (WAV, MP3, FLAC, MP4, WebM, AVI, etc.)")
+    parser.add_argument(
+        "--mode",
+        type=str,
+        choices=["audio", "video"],
+        default="audio",
+        help="Defect detection mode: 'audio' (default) or 'video'",
+    )
     parser.add_argument("--audio-threshold", type=float, default=0.85, help="Confidence threshold for audio deepfake (default: 0.85)")
     parser.add_argument("--visual-threshold", type=float, default=0.65, help="Confidence threshold for visual deepfake (default: 0.65)")
     parser.add_argument("--device", type=str, default=None, help="Compute device ('cpu' or 'cuda')")
@@ -38,16 +45,24 @@ def main():
         print(f"Error: File '{file_path}' does not exist.", file=sys.stderr)
         sys.exit(1)
 
-    print(f"Analyzing media: {file_path.name}...")
+    print(f"Analyzing media [{args.mode.upper()} MODE]: {file_path.name}...")
     detector = UnifiedDeepfakeDetector(
         device=args.device,
         audio_fake_threshold=args.audio_threshold,
         visual_fake_threshold=args.visual_threshold,
     )
-    result = detector.predict(file_path, filename=file_path.name)
+
+    try:
+        result = detector.predict(file_path, filename=file_path.name, mode=args.mode)
+    except ValueError as ve:
+        print(f"\n[ERROR] Analysis Failed: {ve}", file=sys.stderr)
+        sys.exit(1)
+    except Exception as e:
+        print(f"\n[ERROR] Unexpected error: {e}", file=sys.stderr)
+        sys.exit(1)
 
     print("\n" + "=" * 60)
-    print("      MULTIMODAL AUDIO-VISUAL DEEPFAKE DETECTION REPORT")
+    print(f"      {args.mode.upper()} DEFECT DETECTION FORENSIC REPORT")
     print("=" * 60)
 
     # Status badge
@@ -55,37 +70,31 @@ def main():
     badge = "[ALERT] 🚨" if is_fake else "[PASS] ✅"
 
     print(f"Overall Decision:       {badge} {result.get('verdict_title')}")
-    print(f"AV-Deepfake1M Class:    {result.get('overall_verdict', 'unknown').upper()}")
+    print(f"Verdict Classification: {result.get('overall_verdict', 'unknown').upper()}")
     print(f"Overall Confidence:     {result.get('overall_confidence', 0.0) * 100:.2f}%")
-    print(f"Media Type:             {result.get('media_type', 'unknown').upper()}")
+    print(f"Media Container:        {result.get('media_type', 'unknown').upper()}")
     print(f"Total Duration:         {result.get('duration_seconds', 0.0):.2f}s")
     print(f"Inference Latency:      {result.get('inference_time_seconds', 0.0):.3f}s")
     print("-" * 60)
 
-    # Audio details
-    audio_res = result.get("audio_analysis", {})
-    is_audio_active = (
-        audio_res.get("activated", True)
-        and audio_res.get("probabilities") is not None
-        and audio_res.get("status") not in ["not_active", "no_audio_stream"]
-    )
-    if is_audio_active:
-        print("🎙️ AUDIO / SPEECH BREAKDOWN:")
+    # Audio details (Only shown in audio mode)
+    if args.mode == "audio":
+        audio_res = result.get("audio_analysis", {})
+        print("🎙️ AUDIO / SPEECH FORENSICS:")
         print(f"   Prediction:          {audio_res.get('prediction', 'N/A').upper()}")
         if audio_res.get("probabilities"):
             print(f"   Real Probability:    {audio_res['probabilities'].get('real', 0.0) * 100:.2f}%")
             print(f"   Fake Probability:    {audio_res['probabilities'].get('fake', 0.0) * 100:.2f}%")
+        if audio_res.get("bandwidth_analysis"):
+            print(f"   Narrowband Cutoff:   {audio_res['bandwidth_analysis'].get('is_narrowband')}")
+            print(f"   High-Freq Ratio:     {audio_res['bandwidth_analysis'].get('high_freq_ratio')}")
         if audio_res.get("audio_fake_segments"):
             print(f"   Fake Audio Windows:  {audio_res['audio_fake_segments']}")
-    else:
-        print("🎙️ AUDIO / SPEECH BREAKDOWN: DEACTIVATED (Silent / No Audio Track)")
-        print(f"   Note:                {audio_res.get('note', 'Audio subsystem was not activated.')}")
 
-    # Visual details
-    visual_res = result.get("visual_analysis", {})
-    if visual_res.get("status") != "skipped":
-        print("-" * 60)
-        print("👁️ COMPUTER VISION BREAKDOWN:")
+    # Visual details (Only shown in video mode)
+    elif args.mode == "video":
+        visual_res = result.get("visual_analysis", {})
+        print("👁️ COMPUTER VISION FORENSICS:")
         print(f"   Prediction:          {visual_res.get('prediction', 'N/A').upper()}")
         if visual_res.get("probabilities"):
             print(f"   Real Probability:    {visual_res['probabilities'].get('real', 0.0) * 100:.2f}%")

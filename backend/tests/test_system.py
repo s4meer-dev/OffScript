@@ -98,31 +98,56 @@ def test_vision_detector():
 
 
 def test_multimodal_detector():
-    print("\n--- Test 3: Testing Unified Multimodal Detector (AV-Deepfake1M Taxonomy) ---")
+    print("\n--- Test 3: Testing Mode Isolation in UnifiedDeepfakeDetector ---")
     multi_detector = UnifiedDeepfakeDetector()
 
-    # 1. Pure Audio
-    audio_res = multi_detector.predict(TEST_AUDIO_PATH, filename="sample_test.wav")
-    print("Pure Audio Multimodal Verdict:", audio_res["overall_verdict"])
+    # 1. Audio Defect Detection Mode on Audio File
+    print("Testing mode='audio' on audio file...")
+    audio_res = multi_detector.predict(TEST_AUDIO_PATH, filename="sample_test.wav", mode="audio")
+    print("Audio Mode Verdict:", audio_res["overall_verdict"])
     assert audio_res["status"] == "success"
-    assert audio_res["media_type"] == "audio"
-    assert audio_res["overall_verdict"] in ["real", "audio_modified"]
-    assert "fake_segments" in audio_res
+    assert audio_res["mode"] == "audio"
+    assert "audio_analysis" in audio_res
+    assert "visual_analysis" not in audio_res, "visual_analysis MUST NOT exist in audio detection reports!"
+    assert "visual_fake_segments" not in audio_res
 
-    # 2. Video Media
-    video_res = multi_detector.predict(TEST_VIDEO_PATH, filename="sample_test_video.mp4")
-    print("Video Multimodal Verdict:", video_res["overall_verdict"])
+    # 2. Audio Defect Detection Mode on Video File WITHOUT Audio
+    print("Testing mode='audio' on video without audio (Must be rejected, no report)...")
+    video_no_audio_rejected = False
+    try:
+        multi_detector.predict(TEST_VIDEO_PATH, filename="sample_test_video.mp4", mode="audio")
+    except ValueError as ve:
+        print("Caught expected rejection for video without audio:", ve)
+        assert "No audio content present in the uploaded video" in str(ve)
+        video_no_audio_rejected = True
+    assert video_no_audio_rejected, "Video without audio must be rejected in audio mode!"
+
+    # 3. Video Defect Detection Mode on Video File
+    print("Testing mode='video' on video file...")
+    video_res = multi_detector.predict(TEST_VIDEO_PATH, filename="sample_test_video.mp4", mode="video")
+    print("Video Mode Verdict:", video_res["overall_verdict"])
     assert video_res["status"] == "success"
-    assert video_res["media_type"] == "video"
-    assert video_res["overall_verdict"] in ["real", "audio_modified", "visual_modified", "both_modified"]
-    assert "audio_analysis" in video_res
+    assert video_res["mode"] == "video"
     assert "visual_analysis" in video_res
-    assert "fake_segments" in video_res
-    print("Unified Multimodal Test: PASSED")
+    assert "audio_analysis" not in video_res, "audio_analysis MUST NOT exist in video detection reports!"
+    assert "audio_fake_segments" not in video_res
+
+    # 4. Video Defect Detection Mode on Audio File (Must be rejected)
+    print("Testing mode='video' on audio file (Must be rejected)...")
+    audio_in_video_mode_rejected = False
+    try:
+        multi_detector.predict(TEST_AUDIO_PATH, filename="sample_test.wav", mode="video")
+    except ValueError as ve:
+        print("Caught expected rejection for audio file in video mode:", ve)
+        assert "not a video container" in str(ve)
+        audio_in_video_mode_rejected = True
+    assert audio_in_video_mode_rejected, "Audio file must be rejected in video mode!"
+
+    print("Unified Detector Mode Isolation Test: ALL PASSED")
 
 
 def test_fastapi_endpoints():
-    print("\n--- Test 4: Testing FastAPI Endpoints (Audio, Video & UI) ---")
+    print("\n--- Test 4: Testing FastAPI Endpoints (Audio & Video Mode Isolation) ---")
     with TestClient(app) as client:
         # 1. Health Check
         res = client.get("/api/health")
@@ -130,42 +155,51 @@ def test_fastapi_endpoints():
         health = res.json()
         print("Health Check:", health)
         assert health["status"] == "online"
-        assert health["multimodal_ready"] is True
 
-        # 2. Info Check
-        res = client.get("/api/info")
-        assert res.status_code == 200
-        info = res.json()
-        print("Info Check: System Name =", info["system_name"])
-        assert "audio_model" in info
-        assert "visual_model" in info
-        assert "taxonomy" in info
-
-        # 3. HTML Frontend UI
+        # 2. HTML Frontend UI
         res = client.get("/")
         assert res.status_code == 200
-        assert "Multimodal Deepfake Detector" in res.text
+        assert "Audio Defect Detection" in res.text
+        assert "Video Defect Detection" in res.text
         print("HTML Web UI: PASSED")
 
-        # 4. Predict Audio
+        # 3. Predict in Audio Mode with Audio File (Success, no visual in report)
         with open(TEST_AUDIO_PATH, "rb") as f:
-            res = client.post("/api/predict", files={"file": ("sample_test.wav", f, "audio/wav")})
+            res = client.post("/api/predict?mode=audio", files={"file": ("sample_test.wav", f, "audio/wav")})
         assert res.status_code == 200
         data_audio = res.json()
-        print("API Audio Predict:", data_audio["overall_verdict"])
-        assert data_audio["media_type"] == "audio"
-        assert "av_deepfake1m_classification" in data_audio
+        print("API Audio Predict Verdict:", data_audio["overall_verdict"])
+        assert data_audio["mode"] == "audio"
+        assert "audio_analysis" in data_audio
+        assert "visual_analysis" not in data_audio, "Video must not exist in audio mode report!"
 
-        # 5. Predict Video
+        # 4. Predict in Audio Mode with Video File WITHOUT Audio (Must return 400 Bad Request, no report)
         with open(TEST_VIDEO_PATH, "rb") as f:
-            res = client.post("/api/predict", files={"file": ("sample_test_video.mp4", f, "video/mp4")})
+            res = client.post("/api/predict?mode=audio", files={"file": ("sample_test_video.mp4", f, "video/mp4")})
+        assert res.status_code == 400
+        err_audio_video = res.json()
+        print("API Audio on Video without audio (400 Expected):", err_audio_video["detail"])
+        assert "No audio content present in the uploaded video" in err_audio_video["detail"]
+
+        # 5. Predict in Video Mode with Video File (Success, no audio in report)
+        with open(TEST_VIDEO_PATH, "rb") as f:
+            res = client.post("/api/predict?mode=video", files={"file": ("sample_test_video.mp4", f, "video/mp4")})
         assert res.status_code == 200
         data_video = res.json()
-        print("API Video Predict:", data_video["overall_verdict"])
-        assert data_video["media_type"] == "video"
+        print("API Video Predict Verdict:", data_video["overall_verdict"])
+        assert data_video["mode"] == "video"
         assert "visual_analysis" in data_video
-        assert "timeline_events" in data_video
-        print("FastAPI Endpoints: ALL PASSED")
+        assert "audio_analysis" not in data_video, "Audio must not exist in video mode report!"
+
+        # 6. Predict in Video Mode with Audio File (Must return 400 Bad Request)
+        with open(TEST_AUDIO_PATH, "rb") as f:
+            res = client.post("/api/predict?mode=video", files={"file": ("sample_test.wav", f, "audio/wav")})
+        assert res.status_code == 400
+        err_video_audio = res.json()
+        print("API Video on Audio file (400 Expected):", err_video_audio["detail"])
+        assert "not a video container" in err_video_audio["detail"]
+
+        print("FastAPI Endpoints Mode Isolation: ALL PASSED")
 
 
 if __name__ == "__main__":

@@ -1,10 +1,14 @@
 // Multimodal Deepfake Detector - Frontend Application Logic
 
 let selectedFile = null;
+let currentMode = 'audio'; // 'audio' or 'video'
 
 // DOM Elements
 const systemStatus = document.getElementById('systemStatus');
 const dropZone = document.getElementById('dropZone');
+const dropIcon = document.getElementById('dropIcon');
+const dropTitle = document.getElementById('dropTitle');
+const dropHelp = document.getElementById('dropHelp');
 const mediaInput = document.getElementById('mediaInput');
 const fileInfo = document.getElementById('fileInfo');
 const fileName = document.getElementById('fileName');
@@ -15,8 +19,77 @@ const btnAnalyze = document.getElementById('btnAnalyze');
 const loadingIndicator = document.getElementById('loadingIndicator');
 const thresholdPreset = document.getElementById('thresholdPreset');
 const resultsCard = document.getElementById('resultsCard');
+const errorBanner = document.getElementById('errorBanner');
+const errorMessage = document.getElementById('errorMessage');
 
-// 1. Check System Health
+const btnModeAudio = document.getElementById('btnModeAudio');
+const btnModeVideo = document.getElementById('btnModeVideo');
+const audioSampleChips = document.getElementById('audioSampleChips');
+const videoSampleChips = document.getElementById('videoSampleChips');
+const audioCard = document.getElementById('audioCard');
+const visualCard = document.getElementById('visualCard');
+
+// Helper: Show/Hide Error Banner
+function showError(msg) {
+    errorMessage.textContent = msg;
+    errorBanner.style.display = 'flex';
+    resultsCard.style.display = 'none';
+}
+
+function hideError() {
+    errorBanner.style.display = 'none';
+    errorMessage.textContent = '';
+}
+
+// 1. Mode Switching Logic
+function setMode(mode) {
+    if (mode === currentMode) return;
+    currentMode = mode;
+    hideError();
+    resultsCard.style.display = 'none';
+
+    if (mode === 'audio') {
+        btnModeAudio.classList.add('active');
+        btnModeVideo.classList.remove('active');
+        mediaInput.accept = 'audio/*,video/*';
+        dropIcon.textContent = '🎙️';
+        dropTitle.textContent = 'Click to select or drag & drop audio media';
+        dropHelp.textContent = 'Supports Audio (WAV, MP3, FLAC, M4A) & Video containers with audio (MP4, WebM)';
+        audioSampleChips.style.display = 'inline-flex';
+        videoSampleChips.style.display = 'none';
+
+        thresholdPreset.innerHTML = `
+            <option value="balanced" selected>🛡️ Balanced Mode (Threshold 85%)</option>
+            <option value="strict">⚠️ Strict Forensics (Threshold 75%)</option>
+            <option value="permissive">⚡ High Confidence Only (Threshold 92%)</option>
+        `;
+    } else {
+        btnModeVideo.classList.add('active');
+        btnModeAudio.classList.remove('active');
+        mediaInput.accept = 'video/*';
+        dropIcon.textContent = '👁️';
+        dropTitle.textContent = 'Click to select or drag & drop video media';
+        dropHelp.textContent = 'Supports Video containers (MP4, WebM, AVI, MOV, MKV)';
+        audioSampleChips.style.display = 'none';
+        videoSampleChips.style.display = 'inline-flex';
+
+        thresholdPreset.innerHTML = `
+            <option value="balanced" selected>🛡️ Balanced Mode (Threshold 65%)</option>
+            <option value="strict">⚠️ Strict Forensics (Threshold 50%)</option>
+            <option value="permissive">⚡ High Confidence Only (Threshold 80%)</option>
+        `;
+    }
+
+    // If existing selected file is incompatible with video mode, warn user
+    if (selectedFile && currentMode === 'video' && !selectedFile.type.startsWith('video')) {
+        clearSelectedFile();
+    }
+}
+
+btnModeAudio.addEventListener('click', () => setMode('audio'));
+btnModeVideo.addEventListener('click', () => setMode('video'));
+
+// 2. Check System Health
 async function checkSystemHealth() {
     try {
         const res = await fetch('/api/health');
@@ -35,9 +108,10 @@ async function checkSystemHealth() {
     }
 }
 
-// 2. File Selection & Drag-and-Drop
+// 3. File Selection & Drag-and-Drop
 function updateSelectedFile(file) {
     if (!file) return;
+    hideError();
     selectedFile = file;
 
     fileName.textContent = file.name;
@@ -56,6 +130,7 @@ function clearSelectedFile() {
     dropZone.style.display = 'block';
     btnAnalyze.disabled = true;
     resultsCard.style.display = 'none';
+    hideError();
 }
 
 mediaInput.addEventListener('change', (e) => {
@@ -83,38 +158,51 @@ dropZone.addEventListener('drop', (e) => {
 
 btnRemoveFile.addEventListener('click', clearSelectedFile);
 
-// 3. Quick Reference Samples
+// 4. Quick Reference Samples
 async function loadSampleMedia(filename) {
     try {
+        hideError();
         btnAnalyze.disabled = true;
         systemStatus.textContent = 'Loading sample...';
         const res = await fetch(`/samples/${filename}`);
         if (!res.ok) throw new Error('Sample not found');
 
         const blob = await res.blob();
-        const file = new File([blob], filename, { type: blob.type || 'audio/wav' });
+        const mimeType = filename.endsWith('.mp4') ? 'video/mp4' : (blob.type || 'audio/wav');
+        const file = new File([blob], filename, { type: mimeType });
         updateSelectedFile(file);
         checkSystemHealth();
     } catch (err) {
-        alert(`Failed to load sample: ${err.message}`);
+        showError(`Failed to load sample: ${err.message}`);
         checkSystemHealth();
     }
 }
 
-// 4. Threshold Calibration Presets
+// 5. Threshold Calibration Presets
 function getThresholds() {
     const preset = thresholdPreset.value;
-    if (preset === 'strict') {
-        return { audio: 0.75, visual: 0.50 };
-    } else if (preset === 'permissive') {
-        return { audio: 0.92, visual: 0.80 };
+    if (currentMode === 'audio') {
+        if (preset === 'strict') return { audio: 0.75, visual: 0.65 };
+        if (preset === 'permissive') return { audio: 0.92, visual: 0.65 };
+        return { audio: 0.85, visual: 0.65 };
+    } else {
+        if (preset === 'strict') return { audio: 0.85, visual: 0.50 };
+        if (preset === 'permissive') return { audio: 0.85, visual: 0.80 };
+        return { audio: 0.85, visual: 0.65 };
     }
-    return { audio: 0.85, visual: 0.65 }; // balanced / mobile
 }
 
-// 5. Run Forensic Analysis
+// 6. Run Forensic Analysis
 btnAnalyze.addEventListener('click', async () => {
     if (!selectedFile) return;
+
+    hideError();
+
+    // Mode-specific pre-flight checks
+    if (currentMode === 'video' && selectedFile.type.startsWith('audio')) {
+        showError("Video Defect Detection requires a video container (MP4, WebM, AVI, MOV). Please upload a video file.");
+        return;
+    }
 
     btnAnalyze.disabled = true;
     loadingIndicator.style.display = 'block';
@@ -124,7 +212,7 @@ btnAnalyze.addEventListener('click', async () => {
     const formData = new FormData();
     formData.append('file', selectedFile);
 
-    const queryUrl = `/api/predict?audio_threshold=${thresholds.audio}&visual_threshold=${thresholds.visual}`;
+    const queryUrl = `/api/predict?mode=${currentMode}&audio_threshold=${thresholds.audio}&visual_threshold=${thresholds.visual}`;
 
     try {
         const response = await fetch(queryUrl, {
@@ -134,20 +222,22 @@ btnAnalyze.addEventListener('click', async () => {
 
         if (!response.ok) {
             const errData = await response.json().catch(() => ({}));
-            throw new Error(errData.detail || `Server returned ${response.status}`);
+            const msg = errData.detail || `Server error (${response.status})`;
+            showError(msg);
+            return;
         }
 
         const data = await response.json();
         renderResults(data);
     } catch (err) {
-        alert(`Analysis Error: ${err.message}`);
+        showError(`Analysis Error: ${err.message}`);
     } finally {
         btnAnalyze.disabled = false;
         loadingIndicator.style.display = 'none';
     }
 });
 
-// 6. Render Prediction Results
+// 7. Render Prediction Results
 function renderResults(data) {
     const verdictBadge = document.getElementById('verdictBadge');
     const confidenceValue = document.getElementById('confidenceValue');
@@ -156,33 +246,39 @@ function renderResults(data) {
     const verdict = data.overall_verdict || 'unknown';
     const confidence = ((data.overall_confidence || 0) * 100).toFixed(1);
 
-    // Set Verdict
+    // Set Verdict Badge
     verdictBadge.textContent = verdict.replace(/_/g, ' ').toUpperCase();
     if (verdict === 'real') {
         verdictBadge.className = 'verdict-badge verdict-real';
         confidenceBar.style.backgroundColor = 'var(--success)';
-    } else if (verdict === 'both_modified') {
+    } else {
         verdictBadge.className = 'verdict-badge verdict-fake';
         confidenceBar.style.backgroundColor = 'var(--danger)';
-    } else {
-        verdictBadge.className = 'verdict-badge verdict-warning';
-        confidenceBar.style.backgroundColor = 'var(--warning)';
     }
 
     confidenceValue.textContent = `${confidence}%`;
     confidenceBar.style.width = `${confidence}%`;
 
-    // Audio Breakdown
-    const audioData = data.audio_analysis || {};
-    document.getElementById('audioVerdict').textContent = (audioData.prediction || 'N/A').toUpperCase();
-    document.getElementById('audioConfidence').textContent = audioData.confidence !== undefined ? `${(audioData.confidence * 100).toFixed(1)}%` : 'N/A';
-    document.getElementById('audioDuration').textContent = audioData.duration_seconds !== undefined ? `${audioData.duration_seconds.toFixed(2)}s` : 'N/A';
+    // Strict Modality Isolation: Display ONLY the active modality
+    if (data.mode === 'audio' || data.audio_analysis) {
+        // Show Audio Card, Hide Visual Card
+        audioCard.style.display = 'block';
+        visualCard.style.display = 'none';
 
-    // Visual Breakdown
-    const visualData = data.visual_analysis || {};
-    document.getElementById('visualVerdict').textContent = (visualData.prediction || 'N/A').toUpperCase();
-    document.getElementById('visualConfidence').textContent = visualData.confidence !== undefined ? `${(visualData.confidence * 100).toFixed(1)}%` : 'N/A';
-    document.getElementById('visualFrames').textContent = visualData.frames_analyzed !== undefined ? `${visualData.faces_detected || 0} faces / ${visualData.frames_analyzed} frames` : 'N/A';
+        const audioData = data.audio_analysis || {};
+        document.getElementById('audioVerdict').textContent = (audioData.prediction || 'N/A').toUpperCase();
+        document.getElementById('audioConfidence').textContent = audioData.confidence != null ? `${(audioData.confidence * 100).toFixed(1)}%` : 'N/A';
+        document.getElementById('audioDuration').textContent = audioData.duration_seconds != null ? `${audioData.duration_seconds.toFixed(2)}s` : 'N/A';
+    } else if (data.mode === 'video' || data.visual_analysis) {
+        // Show Visual Card, Hide Audio Card
+        visualCard.style.display = 'block';
+        audioCard.style.display = 'none';
+
+        const visualData = data.visual_analysis || {};
+        document.getElementById('visualVerdict').textContent = (visualData.prediction || 'N/A').toUpperCase();
+        document.getElementById('visualConfidence').textContent = visualData.confidence !== undefined ? `${(visualData.confidence * 100).toFixed(1)}%` : 'N/A';
+        document.getElementById('visualFrames').textContent = visualData.frames_analyzed !== undefined ? `${visualData.faces_detected || 0} faces / ${visualData.frames_analyzed} frames` : 'N/A';
+    }
 
     // Tampering Segments
     const tamperingSection = document.getElementById('tamperingSection');
@@ -198,7 +294,7 @@ function renderResults(data) {
         tamperingSection.style.display = 'none';
     }
 
-    // Raw JSON Output
+    // Raw JSON Output (Contains only the analyzed modality)
     document.getElementById('jsonOutput').textContent = JSON.stringify(data, null, 2);
 
     // Show Card & Scroll
