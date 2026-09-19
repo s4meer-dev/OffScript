@@ -51,10 +51,10 @@ function setMode(mode) {
     if (mode === 'audio') {
         btnModeAudio.classList.add('active');
         btnModeVideo.classList.remove('active');
-        mediaInput.accept = 'audio/*,video/*';
+        mediaInput.accept = 'audio/*';
         dropIcon.textContent = '🎙️';
-        dropTitle.textContent = 'Click to select or drag & drop audio media';
-        dropHelp.textContent = 'Supports Audio (WAV, MP3, FLAC, M4A) & Video containers with audio (MP4, WebM)';
+        dropTitle.textContent = 'Click to select or drag & drop audio file';
+        dropHelp.textContent = 'Supports pure Audio formats only (WAV, MP3, FLAC, M4A, OGG). Video files not permitted.';
         audioSampleChips.style.display = 'inline-flex';
         videoSampleChips.style.display = 'none';
 
@@ -80,9 +80,17 @@ function setMode(mode) {
         `;
     }
 
-    // If existing selected file is incompatible with video mode, warn user
-    if (selectedFile && currentMode === 'video' && !selectedFile.type.startsWith('video')) {
-        clearSelectedFile();
+    // Incompatible file checks on mode switch
+    if (selectedFile) {
+        const isVideo = selectedFile.type.startsWith('video') || /\.(mp4|webm|avi|mov|mkv|flv|wmv|m4v)$/i.test(selectedFile.name);
+        const isAudio = selectedFile.type.startsWith('audio') || /\.(wav|mp3|flac|ogg|m4a|aac|wma|opus)$/i.test(selectedFile.name);
+        if (mode === 'audio' && isVideo) {
+            clearSelectedFile();
+            showError("Video files are not permitted in Audio Defect Detection mode. Please upload an audio file.");
+        } else if (mode === 'video' && isAudio) {
+            clearSelectedFile();
+            showError("Audio files are not permitted in Video Defect Detection mode. Please upload a video file.");
+        }
     }
 }
 
@@ -112,6 +120,19 @@ async function checkSystemHealth() {
 function updateSelectedFile(file) {
     if (!file) return;
     hideError();
+
+    const isVideo = file.type.startsWith('video') || /\.(mp4|webm|avi|mov|mkv|flv|wmv|m4v)$/i.test(file.name);
+    const isAudio = file.type.startsWith('audio') || /\.(wav|mp3|flac|ogg|m4a|aac|wma|opus)$/i.test(file.name);
+
+    if (currentMode === 'audio' && isVideo) {
+        showError("Video files are not permitted in Audio Defect Detection mode. Please upload an audio file (WAV, MP3, FLAC, etc.).");
+        return;
+    }
+    if (currentMode === 'video' && isAudio) {
+        showError("Video Defect Detection requires a video file (MP4, WebM, AVI, MOV). Please upload a video file.");
+        return;
+    }
+
     selectedFile = file;
 
     fileName.textContent = file.name;
@@ -199,7 +220,14 @@ btnAnalyze.addEventListener('click', async () => {
     hideError();
 
     // Mode-specific pre-flight checks
-    if (currentMode === 'video' && selectedFile.type.startsWith('audio')) {
+    const isVideo = selectedFile.type.startsWith('video') || /\.(mp4|webm|avi|mov|mkv|flv|wmv|m4v)$/i.test(selectedFile.name);
+    const isAudio = selectedFile.type.startsWith('audio') || /\.(wav|mp3|flac|ogg|m4a|aac|wma|opus)$/i.test(selectedFile.name);
+
+    if (currentMode === 'audio' && isVideo) {
+        showError("Video files are not permitted in Audio Defect Detection mode. Please upload an audio file (WAV, MP3, FLAC, etc.).");
+        return;
+    }
+    if (currentMode === 'video' && isAudio) {
         showError("Video Defect Detection requires a video container (MP4, WebM, AVI, MOV). Please upload a video file.");
         return;
     }

@@ -234,23 +234,21 @@ class UnifiedDeepfakeDetector:
             # 1. AUDIO DEFECT DETECTION MODE
             # ==============================================================
             if mode == "audio":
-                audio_input_source = target_source if is_video else media_input
-                has_audio, reason, waveform, sr = self._verify_has_audio_content(audio_input_source)
+                if is_video:
+                    raise ValueError(
+                        "Video files are not permitted in Audio Defect Detection mode. "
+                        "Please upload an audio file (WAV, MP3, FLAC, OGG, M4A, etc.) or switch to Video Defect Detection mode."
+                    )
 
+                has_audio, reason, waveform, sr = self._verify_has_audio_content(media_input)
                 if not has_audio:
-                    if is_video:
-                        raise ValueError(
-                            f"No audio content present in the uploaded video ({reason}). "
-                            "Under audio defect detection, videos without audio cannot be detected or presented in reports."
-                        )
-                    else:
-                        raise ValueError(f"No audio content present in the uploaded audio file ({reason}).")
+                    raise ValueError(f"No audio content present in the uploaded audio file ({reason}).")
 
                 # Run audio detector ONLY
                 if waveform is not None and sr is not None:
                     audio_res = self.audio_detector.predict(waveform, sample_rate=sr, fake_threshold=a_thresh)
                 else:
-                    audio_res = self.audio_detector.predict(audio_input_source, fake_threshold=a_thresh)
+                    audio_res = self.audio_detector.predict(media_input, fake_threshold=a_thresh)
 
                 # If audio analysis determined silence
                 if audio_res.get("prediction") == "silent" or audio_res.get("speech_ratio", 1.0) == 0.0:
@@ -276,7 +274,7 @@ class UnifiedDeepfakeDetector:
                 return {
                     "status": "success",
                     "mode": "audio",
-                    "media_type": "video" if is_video else "audio",
+                    "media_type": "audio",
                     "overall_verdict": overall_verdict,
                     "overall_prediction": overall_prediction,
                     "overall_confidence": audio_conf,

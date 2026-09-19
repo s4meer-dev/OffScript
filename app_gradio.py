@@ -21,6 +21,22 @@ def classify_media(file_obj, mode_selection, audio_thresh=0.85, visual_thresh=0.
         mode = "audio" if mode_selection == "Audio Defect Detection" else "video"
         file_path = file_obj if isinstance(file_obj, str) else getattr(file_obj, "name", str(file_obj))
 
+        is_video = detector.is_video_file(file_path)
+        if mode == "audio" and is_video:
+            return (
+                "### ⚠️ Rejection\n\n**Video files are not permitted in Audio Defect Detection mode.** "
+                "Please upload an audio file (WAV, MP3, FLAC, M4A, OGG) or switch to 'Video Defect Detection'.",
+                {},
+                "",
+            )
+        if mode == "video" and not is_video:
+            return (
+                "### ⚠️ Rejection\n\n**Audio files are not permitted in Video Defect Detection mode.** "
+                "Please upload a video file (MP4, WebM, AVI, MOV).",
+                {},
+                "",
+            )
+
         result = detector.predict(
             file_path,
             mode=mode,

@@ -45,6 +45,22 @@ def main():
         print(f"Error: File '{file_path}' does not exist.", file=sys.stderr)
         sys.exit(1)
 
+    is_video = UnifiedDeepfakeDetector.is_video_file(file_path, filename=file_path.name)
+    if args.mode == "audio" and is_video:
+        print(
+            f"Error: Video files are not permitted in Audio Defect Detection mode. "
+            f"'{file_path.name}' is a video container. Please upload an audio file or use '--mode video'.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+    if args.mode == "video" and not is_video:
+        print(
+            f"Error: Video Defect Detection requires a video container. "
+            f"'{file_path.name}' is not a video file. Please upload a video container (MP4, WebM, AVI, MOV) or use '--mode audio'.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
     print(f"Analyzing media [{args.mode.upper()} MODE]: {file_path.name}...")
     detector = UnifiedDeepfakeDetector(
         device=args.device,

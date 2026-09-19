@@ -111,16 +111,16 @@ def test_multimodal_detector():
     assert "visual_analysis" not in audio_res, "visual_analysis MUST NOT exist in audio detection reports!"
     assert "visual_fake_segments" not in audio_res
 
-    # 2. Audio Defect Detection Mode on Video File WITHOUT Audio
-    print("Testing mode='audio' on video without audio (Must be rejected, no report)...")
-    video_no_audio_rejected = False
+    # 2. Audio Defect Detection Mode on Video File (Must be rejected, no video allowed)
+    print("Testing mode='audio' on video file (Must be rejected, video not permitted)...")
+    video_in_audio_mode_rejected = False
     try:
         multi_detector.predict(TEST_VIDEO_PATH, filename="sample_test_video.mp4", mode="audio")
     except ValueError as ve:
-        print("Caught expected rejection for video without audio:", ve)
-        assert "No audio content present in the uploaded video" in str(ve)
-        video_no_audio_rejected = True
-    assert video_no_audio_rejected, "Video without audio must be rejected in audio mode!"
+        print("Caught expected rejection for video in audio mode:", ve)
+        assert "Video files are not permitted in Audio Defect Detection mode" in str(ve)
+        video_in_audio_mode_rejected = True
+    assert video_in_audio_mode_rejected, "Video files must be rejected in audio mode!"
 
     # 3. Video Defect Detection Mode on Video File
     print("Testing mode='video' on video file...")
@@ -173,13 +173,13 @@ def test_fastapi_endpoints():
         assert "audio_analysis" in data_audio
         assert "visual_analysis" not in data_audio, "Video must not exist in audio mode report!"
 
-        # 4. Predict in Audio Mode with Video File WITHOUT Audio (Must return 400 Bad Request, no report)
+        # 4. Predict in Audio Mode with Video File (Must return 400 Bad Request, no report)
         with open(TEST_VIDEO_PATH, "rb") as f:
             res = client.post("/api/predict?mode=audio", files={"file": ("sample_test_video.mp4", f, "video/mp4")})
         assert res.status_code == 400
         err_audio_video = res.json()
-        print("API Audio on Video without audio (400 Expected):", err_audio_video["detail"])
-        assert "No audio content present in the uploaded video" in err_audio_video["detail"]
+        print("API Audio on Video file (400 Expected):", err_audio_video["detail"])
+        assert "Video files are not permitted in Audio Defect Detection mode" in err_audio_video["detail"]
 
         # 5. Predict in Video Mode with Video File (Success, no audio in report)
         with open(TEST_VIDEO_PATH, "rb") as f:
