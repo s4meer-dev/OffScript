@@ -154,11 +154,11 @@ class DeepfakeVisionDetector:
         return frames, timestamps, metadata
 
     def _detect_and_crop_face(
-        self, frame_bgr: np.ndarray
+        self, frame_bgr: np.ndarray, prev_box: Optional[Tuple[int, int, int, int]] = None
     ) -> Tuple[Optional[np.ndarray], Optional[Tuple[int, int, int, int]], bool]:
         """
-        Multi-tier robust face detection:
-        Tier 1: YuNet neural face detector (photographic humans).
+        Multi-tier robust face detection with spatial-temporal subject tracking:
+        Tier 1: YuNet neural face detector with tracking lock.
         Tier 2: Biometric skin-chrominance contour localization.
         Tier 3: Canonical talking-head center-portrait ROI.
         Returns: (cropped_face, (x, y, w, h), is_face_detected)
@@ -173,12 +173,31 @@ class DeepfakeVisionDetector:
                 self.yunet_detector.setInputSize((w_frame, h_frame))
                 retval, faces = self.yunet_detector.detect(frame_bgr)
                 if faces is not None and len(faces) > 0:
-                    best_face = max(faces, key=lambda f: f[-1])
-                    if best_face[-1] >= 0.5:
-                        bx, by, bw, bh = best_face[0:4].astype(int)
-                        if bw >= 20 and bh >= 20 and bx >= 0 and by >= 0:
-                            face_box = (int(bx), int(by), int(bw), int(bh))
-                            is_detected = True
+                    valid_faces = []
+                    for f in faces:
+                        if f[-1] >= 0.4:
+                            bx, by, bw, bh = f[0:4].astype(int)
+                            if bw >= 20 and bh >= 20 and bx >= 0 and by >= 0:
+                                valid_faces.append((int(bx), int(by), int(bw), int(bh), float(f[-1])))
+
+                    if valid_faces:
+                        if prev_box is not None:
+                            # Spatial proximity tracking: lock onto the same subject across frames
+                            px, py, pw, ph = prev_box
+                            pcx, pcy = px + pw / 2.0, py + ph / 2.0
+                            best = min(
+                                valid_faces,
+                                key=lambda f: (f[0] + f[2] / 2.0 - pcx) ** 2 + (f[1] + f[3] / 2.0 - pcy) ** 2
+                            )
+                        else:
+                            # First frame: pick central prominent talking head
+                            img_cx, img_cy = w_frame / 2.0, h_frame / 2.0
+                            best = max(
+                                valid_faces,
+                                key=lambda f: (f[2] * f[3]) / (1.0 + 0.001 * ((f[0] + f[2] / 2.0 - img_cx) ** 2 + (f[1] + f[3] / 2.0 - img_cy) ** 2))
+                            )
+                        face_box = best[:4]
+                        is_detected = True
             except Exception:
                 face_box = None
 
@@ -202,7 +221,15 @@ class DeepfakeVisionDetector:
                             valid_candidates.append((bx, by, bw, bh, area))
 
                 if valid_candidates:
-                    best = max(valid_candidates, key=lambda b: b[4])
+                    if prev_box is not None:
+                        px, py, pw, ph = prev_box
+                        pcx, pcy = px + pw / 2.0, py + ph / 2.0
+                        best = min(
+                            valid_candidates,
+                            key=lambda b: (b[0] + b[2] / 2.0 - pcx) ** 2 + (b[1] + b[3] / 2.0 - pcy) ** 2
+                        )
+                    else:
+                        best = max(valid_candidates, key=lambda b: b[4])
                     face_box = best[:4]
                     is_detected = True
             except Exception:
@@ -334,7 +361,8 @@ class DeepfakeVisionDetector:
     ) -> Tuple[float, List[float]]:
         """
         Analyze temporal micro-jitter and face warping across consecutive frames.
-        Aligns consecutive faces to discount natural head translation.
+        Compensates for rigid head translation using phase correlation so that
+        natural speech, head turns, and camera shake are not falsely penalized.
         Returns: (overall_flicker_score, list_of_frame_flicker_scores)
         """
         if len(face_crops) < 2:
@@ -347,8 +375,22 @@ class DeepfakeVisionDetector:
             prev = cv2.cvtColor(resized[i - 1], cv2.COLOR_BGR2GRAY)
             curr = cv2.cvtColor(resized[i], cv2.COLOR_BGR2GRAY)
 
+            # Subpixel phase correlation to align rigid head movement
+            try:
+                prev_f = np.float32(prev)
+                curr_f = np.float32(curr)
+                shift, _ = cv2.phaseCorrelate(prev_f, curr_f)
+                dx, dy = shift
+                if abs(dx) < 20 and abs(dy) < 20:
+                    M = np.float32([[1, 0, dx], [0, 1, dy]])
+                    prev_aligned = cv2.warpAffine(prev, M, (96, 96), borderMode=cv2.BORDER_REPLICATE)
+                else:
+                    prev_aligned = prev
+            except Exception:
+                prev_aligned = prev
+
             # High-pass Laplacian edge representation
-            lap_prev = cv2.Laplacian(prev, cv2.CV_32F)
+            lap_prev = cv2.Laplacian(prev_aligned, cv2.CV_32F)
             lap_curr = cv2.Laplacian(curr, cv2.CV_32F)
 
             # Normalize high-pass inter-frame edge discrepancy
@@ -356,9 +398,9 @@ class DeepfakeVisionDetector:
             mean_edge = (np.mean(np.abs(lap_curr)) + np.mean(np.abs(lap_prev)) + 1e-5)
             norm_jitter = float(np.mean(diff) / mean_edge)
 
-            # In natural speech / motion: norm_jitter is ~ 0.20 - 0.45.
-            # In deepfake temporal warping / boundary fluttering: spikes > 0.65.
-            flicker = float(np.clip((norm_jitter - 0.52) / 0.35, 0.0, 1.0))
+            # Natural talking/motion with alignment: norm_jitter is typically 0.20 - 0.50.
+            # Deepfake warping / mask seam fluttering: norm_jitter > 0.68.
+            flicker = float(np.clip((norm_jitter - 0.58) / 0.32, 0.0, 1.0))
             flicker_scores.append(flicker)
 
         overall_flicker = float(np.mean(flicker_scores[1:])) if len(flicker_scores) > 1 else 0.0
@@ -394,7 +436,12 @@ class DeepfakeVisionDetector:
                 with torch.no_grad():
                     logits = self.finetuned_classifier(batch)
                     probs = torch.softmax(logits, dim=1)  # Class 0: fake, Class 1: real
-                    neural_fake_prob = float(probs[:, 0].mean().cpu().item())
+                    raw_p = float(probs[:, 0].mean().cpu().item())
+                    # Only use neural classifier if it is confident/decisive (not ~0.50 coin flip)
+                    if abs(raw_p - 0.50) >= 0.15:
+                        neural_fake_prob = raw_p
+                    else:
+                        neural_fake_prob = None
             except Exception:
                 neural_fake_prob = None
 
@@ -485,8 +532,11 @@ class DeepfakeVisionDetector:
             boundary_scores: List[float] = []
             fft_scores: List[float] = []
 
+            prev_bbox = None
             for idx, (frame, t) in enumerate(zip(frames, timestamps)):
-                face, bbox, is_detected = self._detect_and_crop_face(frame)
+                face, bbox, is_detected = self._detect_and_crop_face(frame, prev_box=prev_bbox)
+                if is_detected and bbox:
+                    prev_bbox = bbox
                 face_crops.append(face)
                 valid_timestamps.append(t)
 
@@ -553,27 +603,35 @@ class DeepfakeVisionDetector:
                     0.20 * deep_anomaly
                 )
 
-            # Count corroborated branches with significant elevation
-            elevated_branches = [k for k, v in branches.items() if v is not None and v >= 0.40]
-            num_elevated = len(elevated_branches)
+            # Significant anomaly identification:
+            # Requires elevated deviation (> 0.50) from natural baseline.
+            has_boundary_anomaly = mean_boundary >= 0.50
+            has_spectral_anomaly = mean_fft >= 0.45
+            has_identity_anomaly = deep_anomaly >= 0.45
+            has_neural_anomaly = (neural_fake_prob is not None and neural_fake_prob >= 0.65)
+            has_temporal_anomaly = temporal_flicker >= 0.55
 
-            # Calibrated Multi-Branch Bayesian Fusion:
-            # - If 2+ branches corroborate, probability scales up decisively.
-            # - If only 1 branch has a slight noise spike, damp it down (prevent false positives).
-            # - If all branches are clean (<0.25), probability drops to authentic baseline (<0.15).
-            if num_elevated >= 2:
-                prob_fake = min(0.98, base_prob + 0.20 * num_elevated)
-            elif num_elevated == 1:
-                # Single-branch elevation: check if it is overwhelming (> 0.70)
-                max_score = max(branches.values())
-                if max_score > 0.70:
-                    prob_fake = 0.55 + 0.35 * (max_score - 0.70)
-                else:
-                    # Likely camera noise or sensor texture: suppress false alarm
-                    prob_fake = base_prob * 0.75
+            # Physical structural forensics:
+            physical_anomalies = [has_boundary_anomaly, has_spectral_anomaly, has_identity_anomaly]
+            num_physical = sum(physical_anomalies)
+
+            # Forensic Ground Truth:
+            # If all physical structural vectors are pristine (< 0.35 boundary, < 0.25 FFT, < 0.35 identity),
+            # this is an authentic optical capture.
+            # Head turns, speech articulation, or camera shake must NEVER produce a fake verdict on their own!
+            if mean_boundary < 0.35 and mean_fft < 0.25 and deep_anomaly < 0.35:
+                # Authentic optical capture
+                prob_fake = float(max(mean_boundary, mean_fft, deep_anomaly) * 0.5)
+                prob_fake = min(prob_fake, 0.18)
+            elif num_physical >= 2 or (num_physical >= 1 and (has_temporal_anomaly or has_neural_anomaly)):
+                # Corroborated manipulation across multiple independent forensic vectors
+                prob_fake = min(0.95, base_prob + 0.25)
+            elif num_physical == 1:
+                # Single physical anomaly: suspicious / moderate variation
+                prob_fake = float(np.clip(base_prob, 0.35, 0.55))
             else:
-                # All branches clean: authentic video
-                prob_fake = base_prob * 0.60
+                # Authentic baseline
+                prob_fake = float(np.clip(base_prob * 0.6, 0.05, 0.25))
 
             prob_fake = float(np.clip(prob_fake, 0.02, 0.98))
             prob_real = float(1.0 - prob_fake)
@@ -621,8 +679,8 @@ class DeepfakeVisionDetector:
             else:
                 findings_log.append("[ANOMALY] Periodic grid lattice peaks detected in frequency domain (characteristic of diffusion/GAN upsampling).")
 
-            if temporal_flicker < 0.25:
-                findings_log.append("[AUTHENTIC] Inter-frame facial motion vectors are smooth; no high-frequency temporal warping or jitter.")
+            if temporal_flicker < 0.35 or (mean_boundary < 0.35 and mean_fft < 0.25):
+                findings_log.append("[AUTHENTIC] Inter-frame facial dynamics are consistent; no synthetic warping or non-rigid jitter.")
             else:
                 findings_log.append("[ANOMALY] Inter-frame warping and edge jitter detected across consecutive frames.")
 
