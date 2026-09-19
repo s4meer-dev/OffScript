@@ -61,8 +61,8 @@
             </div>
         </section>
 
-        <!-- Live Talk Card (Added from Git) -->
-        <section class="card live-card" style="margin-bottom: 2rem;">
+        <!-- Live Talk Card (Voice Only) -->
+        <section class="card live-card" id="liveTalkCard" style="margin-bottom: 2rem; display: none;">
             <div class="results-header">
                 <h2>🎙️ Live Talk Forensics</h2>
                 <div class="verdict-badge" style="background: rgba(255, 255, 255, 0.1);">Presentation Mode</div>
@@ -100,7 +100,7 @@
                         <option value="custom">🎛️ Custom Fine-Tuned Threshold</option>
                     </select>
                 </div>
-                <div class="control-group slider-group">
+                <div class="control-group slider-group" id="thresholdSliderGroup">
                     <div class="slider-header">
                         <label for="thresholdSlider">Fine-Tune Sensitivity Threshold:</label>
                         <span id="sliderValueText" class="slider-value-badge">50%</span>
@@ -110,7 +110,7 @@
             </div>
 
             <!-- Camera Recording Quick Action -->
-            <div class="camera-action-bar">
+            <div class="camera-action-bar" id="cameraActionBar">
                 <button type="button" id="btnRecordCamera" class="btn-camera">
                     <span class="camera-btn-icon">📹</span>
                     <span>Record Live from Camera / Webcam</span>
@@ -193,6 +193,10 @@
                 </div>
                 <div class="progress-bar-bg">
                     <div id="confidenceBar" class="progress-bar-fill" style="width: 0%;"></div>
+                </div>
+                <div class="confidence-footer" style="display: flex; justify-content: space-between; margin-top: 8px; font-size: 0.85rem; color: var(--text-muted);">
+                    <span>Authentic Probability: <strong id="probRealValue" style="color: var(--success);">0.0%</strong></span>
+                    <span>Manipulation Risk: <strong id="probFakeValue" style="color: var(--danger);">0.0%</strong></span>
                 </div>
             </div>
 

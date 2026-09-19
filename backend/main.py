@@ -58,6 +58,10 @@ app.include_router(predict_router)
 app.include_router(samples_router)
 app.include_router(train_router)
 
+from backend.routes.health import health_check
+app.add_api_route("/health", health_check, methods=["GET"], include_in_schema=False)
+
+
 
 @app.get("/favicon.ico", include_in_schema=False)
 async def favicon():
