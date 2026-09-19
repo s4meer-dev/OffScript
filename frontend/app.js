@@ -375,11 +375,35 @@ btnAnalyze.addEventListener('click', async () => {
 
 // 7. Render Comprehensive Forensic Dashboard
 function renderForensicDashboard(data) {
-    const isAudioMode = data.mode === 'audio' || (data.audio_analysis && !data.visual_analysis);
-    const isFake = Boolean(data.is_fake);
-    const confidence = ((data.overall_confidence || 0) * 100).toFixed(1);
-    const probFake = ((data.probabilities?.fake || 0) * 100).toFixed(1);
-    const probReal = ((data.probabilities?.real || 0) * 100).toFixed(1);
+    // Robust detection of audio vs video mode
+    const hasVisualAnalysis = Boolean(data.visual_analysis && (
+        (data.visual_analysis.frames_analyzed != null && data.visual_analysis.frames_analyzed > 0) ||
+        (data.visual_analysis.frame_analysis && data.visual_analysis.frame_analysis.length > 0) ||
+        data.visual_analysis.status === 'success' ||
+        data.visual_analysis.video_metadata
+    ));
+    const hasAudioAnalysis = Boolean(data.audio_analysis && (
+        data.audio_analysis.duration_seconds != null ||
+        data.audio_analysis.status === 'success' ||
+        data.audio_analysis.confidence != null
+    ));
+
+    const isAudioMode = (currentMode === 'audio' || data.mode === 'audio' || data.media_type === 'audio')
+        ? true
+        : (currentMode === 'video' || data.mode === 'video' || data.media_type === 'video')
+            ? false
+            : (!hasVisualAnalysis && hasAudioAnalysis);
+
+    const visualData = data.visual_analysis || data;
+    const audioData = data.audio_analysis || data;
+    const isFake = Boolean(data.is_fake ?? (data.overall_prediction === 'fake') ?? (isAudioMode ? audioData.is_fake : visualData.is_fake));
+
+    const overallConf = data.overall_confidence ?? (isAudioMode ? audioData.confidence : visualData.confidence) ?? 0;
+    const confidence = (overallConf * 100).toFixed(1);
+
+    const probs = data.probabilities || (isAudioMode ? audioData.probabilities : visualData.probabilities) || (isFake ? { real: 0.05, fake: 0.95 } : { real: 0.95, fake: 0.05 });
+    const probFake = ((probs.fake || 0) * 100).toFixed(1);
+    const probReal = ((probs.real || 0) * 100).toFixed(1);
 
     // 1. Verdict & Risk Header
     const verdictTitleText = document.getElementById('verdictTitleText');
@@ -391,23 +415,25 @@ function renderForensicDashboard(data) {
         ? (isFake ? "AI Voice Clone / Synthetic Speech Detected" : "Authentic Human Voice Recording")
         : (isFake ? "Deepfake Video Manipulation Detected" : "Authentic Video Media Verified");
 
-    verdictTitleText.textContent = data.verdict || defaultTitle;
-    techniqueSubtext.textContent = data.forensic_metrics?.primary_technique || (isAudioMode ? "Neural Wav2Vec2 Acoustic Analysis" : "Authentic Optical Capture");
+    const verdictText = data.verdict || data.verdict_title || (isAudioMode ? audioData.verdict || audioData.verdict_title : visualData.verdict || visualData.verdict_title) || defaultTitle;
+    verdictTitleText.textContent = verdictText;
+
+    techniqueSubtext.textContent = data.forensic_metrics?.primary_technique || visualData.forensic_metrics?.primary_technique || (isAudioMode ? "Neural Wav2Vec2 Acoustic Analysis" : "Authentic Optical Capture");
 
     if (isFake) {
         verdictBadge.textContent = "MANIPULATED";
         verdictBadge.className = "verdict-badge verdict-fake";
-        riskBadge.textContent = data.risk_level || "CRITICAL RISK";
+        riskBadge.textContent = data.risk_level || visualData.risk_level || (isAudioMode ? "CRITICAL (SYNTHETIC VOICE)" : "CRITICAL RISK");
         riskBadge.className = "risk-badge risk-high";
-    } else if (data.prediction === "suspicious_visual" || data.prediction === "uncertain_ambient") {
+    } else if (data.prediction === "suspicious_visual" || visualData.prediction === "suspicious_visual" || data.prediction === "uncertain_ambient") {
         verdictBadge.textContent = "INCONCLUSIVE";
         verdictBadge.className = "verdict-badge verdict-warning";
-        riskBadge.textContent = data.risk_level || "MODERATE RISK";
+        riskBadge.textContent = data.risk_level || visualData.risk_level || "MODERATE RISK";
         riskBadge.className = "risk-badge risk-med";
     } else {
         verdictBadge.textContent = "AUTHENTIC";
         verdictBadge.className = "verdict-badge verdict-real";
-        riskBadge.textContent = data.risk_level || "LOW RISK";
+        riskBadge.textContent = data.risk_level || visualData.risk_level || "LOW RISK";
         riskBadge.className = "risk-badge risk-low";
     }
 
@@ -432,14 +458,14 @@ function renderForensicDashboard(data) {
         audioForensicsSection.style.display = 'block';
         videoForensicsSection.style.display = 'none';
 
-        const audioData = data.audio_analysis || {};
-        const audioPred = (audioData.prediction || 'N/A').toUpperCase();
+        const audioPred = (audioData.prediction || (audioData.is_fake ? 'fake' : 'real') || 'N/A').toUpperCase();
         document.getElementById('audioVerdict').textContent = audioPred;
         document.getElementById('audioConfidence').textContent = audioData.confidence != null ? `${(audioData.confidence * 100).toFixed(1)}%` : 'N/A';
-        document.getElementById('audioDuration').textContent = audioData.duration_seconds != null ? `${audioData.duration_seconds.toFixed(2)}s` : 'N/A';
+        const audDuration = audioData.duration_seconds ?? data.duration_seconds;
+        document.getElementById('audioDuration').textContent = audDuration != null ? `${Number(audDuration).toFixed(2)}s` : 'N/A';
 
         const audioRating = document.getElementById('audioRating');
-        if (audioData.prediction === 'fake') {
+        if (audioData.prediction === 'fake' || audioData.is_fake) {
             audioRating.textContent = 'Synthetic Voice';
             audioRating.className = 'diag-rating rating-danger';
         } else {
@@ -452,7 +478,7 @@ function renderForensicDashboard(data) {
         audioForensicsSection.style.display = 'none';
 
         // Multi-Vector Diagnostics Radar Grid
-        const diag = data.diagnostic_breakdown || {};
+        const diag = data.diagnostic_breakdown || visualData.diagnostic_breakdown || {};
         renderDiagnosticVector('Boundary', diag.boundary_seams || { score: 0.1, rating: 'Pristine' });
         renderDiagnosticVector('Fft', diag.spectral_lattice || { score: 0.1, rating: 'Natural' });
         renderDiagnosticVector('Temporal', diag.temporal_stability || { score: 0.1, rating: 'Smooth' });
@@ -461,7 +487,7 @@ function renderForensicDashboard(data) {
         // Forensic Observations & Findings Log
         const findingsList = document.getElementById('findingsList');
         findingsList.innerHTML = '';
-        const findings = data.findings_log || [];
+        const findings = data.findings_log || visualData.findings_log || [];
         if (findings.length > 0) {
             findings.forEach((finding) => {
                 const item = document.createElement('div');
@@ -480,9 +506,11 @@ function renderForensicDashboard(data) {
         // Frame-by-Frame Timeline Analysis Gallery
         const frameGallery = document.getElementById('frameGallery');
         frameGallery.innerHTML = '';
-        const frames = data.frame_analysis || [];
+        const frames = data.frame_analysis || visualData.frame_analysis || [];
+        const meta = data.video_metadata || visualData.video_metadata || {};
+        const duration = meta.duration_seconds ?? data.duration_seconds ?? visualData.duration_seconds ?? 0;
         const timelineHelpText = document.getElementById('timelineHelpText');
-        timelineHelpText.textContent = `${frames.length} sampled frames evaluated across ${data.video_metadata?.duration_seconds || 0}s duration`;
+        timelineHelpText.textContent = `${frames.length} sampled frames evaluated across ${Number(duration).toFixed(2)}s duration`;
 
         frames.forEach((f) => {
             const card = document.createElement('div');
@@ -499,7 +527,7 @@ function renderForensicDashboard(data) {
                 </div>
                 <div class="frame-meta-row">
                     ${faceBadge}
-                    <span class="frame-status-tag ${statusClass}-tag">${f.status.toUpperCase()}</span>
+                    <span class="frame-status-tag ${statusClass}-tag">${(f.status || 'authentic').toUpperCase()}</span>
                 </div>
                 <div class="frame-score-row">
                     <span>Anomaly Risk:</span>
@@ -513,21 +541,25 @@ function renderForensicDashboard(data) {
         });
 
         // Video Forensic Metadata
-        const meta = data.video_metadata || {};
-        document.getElementById('metaResolution').textContent = meta.resolution || 'N/A';
+        const framesAnalyzed = data.frames_analyzed ?? visualData.frames_analyzed ?? frames.length;
+        const facesDetected = data.faces_detected ?? visualData.faces_detected ?? (frames.filter(f => f.face_detected).length);
+        const facePresenceRatio = data.face_presence_ratio ?? visualData.face_presence_ratio ?? (framesAnalyzed > 0 ? (facesDetected / framesAnalyzed) : 0.0);
+        const latency = data.inference_time_seconds ?? visualData.inference_time_seconds ?? 0;
+
+        document.getElementById('metaResolution').textContent = meta.resolution || (meta.width && meta.height ? `${meta.width}x${meta.height}` : 'N/A');
         document.getElementById('metaFps').textContent = meta.fps ? `${meta.fps} FPS` : 'N/A';
-        document.getElementById('metaDuration').textContent = meta.duration_seconds != null ? `${meta.duration_seconds.toFixed(2)}s` : 'N/A';
-        document.getElementById('metaFramesAnalyzed').textContent = `${data.frames_analyzed || 0} (${meta.total_frames || 0} total)`;
-        document.getElementById('metaFacePresence').textContent = `${data.faces_detected || 0} detected (${((data.face_presence_ratio || 0) * 100).toFixed(0)}%)`;
-        document.getElementById('metaLatency').textContent = `${data.inference_time_seconds || 0}s`;
+        document.getElementById('metaDuration').textContent = duration ? `${Number(duration).toFixed(2)}s` : 'N/A';
+        document.getElementById('metaFramesAnalyzed').textContent = `${framesAnalyzed} (${meta.total_frames || framesAnalyzed} total)`;
+        document.getElementById('metaFacePresence').textContent = `${facesDetected} detected (${(facePresenceRatio * 100).toFixed(0)}%)`;
+        document.getElementById('metaLatency').textContent = `${latency}s`;
     }
 
     // 4. Temporal Tampering Localization
     const tamperingSection = document.getElementById('tamperingSection');
     const tamperingList = document.getElementById('tamperingList');
     const fakeSegments = isAudioMode 
-        ? (data.audio_fake_segments || data.fake_segments || [])
-        : (data.visual_fake_segments || data.fake_segments || []);
+        ? (data.audio_fake_segments || audioData.audio_fake_segments || data.fake_segments || [])
+        : (data.visual_fake_segments || visualData.visual_fake_segments || data.fake_segments || []);
 
     if (fakeSegments.length > 0) {
         tamperingList.innerHTML = fakeSegments.map(seg => 
