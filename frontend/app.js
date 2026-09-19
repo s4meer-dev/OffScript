@@ -1,7 +1,8 @@
 // Multimodal Deepfake Detector - Frontend Application Logic
 
 let selectedFile = null;
-let currentMode = 'audio'; // 'audio' or 'video'
+let currentMode = 'video'; // 'video' (primary) or 'audio'
+let currentObjectUrl = null;
 
 // DOM Elements
 const systemStatus = document.getElementById('systemStatus');
@@ -21,6 +22,12 @@ const thresholdPreset = document.getElementById('thresholdPreset');
 const resultsCard = document.getElementById('resultsCard');
 const errorBanner = document.getElementById('errorBanner');
 const errorMessage = document.getElementById('errorMessage');
+
+const previewBox = document.getElementById('previewBox');
+const previewBadge = document.getElementById('previewBadge');
+const previewAudioNotice = document.getElementById('previewAudioNotice');
+const videoPlayer = document.getElementById('videoPlayer');
+const audioPlayer = document.getElementById('audioPlayer');
 
 const btnModeAudio = document.getElementById('btnModeAudio');
 const btnModeVideo = document.getElementById('btnModeVideo');
@@ -116,7 +123,46 @@ async function checkSystemHealth() {
     }
 }
 
-// 3. File Selection & Drag-and-Drop
+// 3. File Selection, Media Preview & Drag-and-Drop
+function displayPreview(file) {
+    if (currentObjectUrl) {
+        URL.revokeObjectURL(currentObjectUrl);
+        currentObjectUrl = null;
+    }
+
+    // Pause and reset existing players
+    videoPlayer.pause();
+    videoPlayer.removeAttribute('src');
+    videoPlayer.load();
+    videoPlayer.style.display = 'none';
+
+    audioPlayer.pause();
+    audioPlayer.removeAttribute('src');
+    audioPlayer.load();
+    audioPlayer.style.display = 'none';
+
+    const isVideo = file.type.startsWith('video') || /\.(mp4|webm|avi|mov|mkv|flv|wmv|m4v)$/i.test(file.name);
+    currentObjectUrl = URL.createObjectURL(file);
+
+    if (isVideo) {
+        videoPlayer.src = currentObjectUrl;
+        videoPlayer.style.display = 'block';
+        previewBadge.textContent = '🎬 Video & Audio Preview';
+        previewBadge.className = 'preview-badge badge-video';
+        previewAudioNotice.textContent = 'Synchronized video & audio playback ready';
+        previewAudioNotice.style.display = 'inline';
+    } else {
+        audioPlayer.src = currentObjectUrl;
+        audioPlayer.style.display = 'block';
+        previewBadge.textContent = '🎵 Audio Track Preview';
+        previewBadge.className = 'preview-badge badge-audio';
+        previewAudioNotice.textContent = 'Speech waveform & acoustic player ready';
+        previewAudioNotice.style.display = 'inline';
+    }
+
+    previewBox.style.display = 'block';
+}
+
 function updateSelectedFile(file) {
     if (!file) return;
     hideError();
@@ -137,9 +183,10 @@ function updateSelectedFile(file) {
 
     fileName.textContent = file.name;
     fileSize.textContent = `${(file.size / 1024).toFixed(1)} KB`;
-    fileIcon.textContent = file.type.startsWith('video') ? '🎬' : '🎵';
+    fileIcon.textContent = isVideo ? '🎬' : '🎵';
 
     fileInfo.style.display = 'flex';
+    displayPreview(file);
     dropZone.style.display = 'none';
     btnAnalyze.disabled = false;
 }
@@ -148,6 +195,23 @@ function clearSelectedFile() {
     selectedFile = null;
     mediaInput.value = '';
     fileInfo.style.display = 'none';
+
+    if (currentObjectUrl) {
+        URL.revokeObjectURL(currentObjectUrl);
+        currentObjectUrl = null;
+    }
+
+    videoPlayer.pause();
+    videoPlayer.removeAttribute('src');
+    videoPlayer.load();
+    videoPlayer.style.display = 'none';
+
+    audioPlayer.pause();
+    audioPlayer.removeAttribute('src');
+    audioPlayer.load();
+    audioPlayer.style.display = 'none';
+
+    previewBox.style.display = 'none';
     dropZone.style.display = 'block';
     btnAnalyze.disabled = true;
     resultsCard.style.display = 'none';

@@ -9,7 +9,7 @@ router = APIRouter(prefix="/api", tags=["Inference"])
 async def predict_media(
     request: Request,
     file: UploadFile = File(..., description="Media file (WAV, MP3, FLAC, OGG, MP4, WebM, AVI, MOV, etc.)"),
-    mode: str = Query("audio", description="Detection mode: 'audio' or 'video' (or 'multimodal')"),
+    mode: str = Query("video", description="Detection mode: 'video' or 'audio' (or 'multimodal')"),
     audio_threshold: Optional[float] = Query(None, ge=0.50, le=0.99, description="Audio deepfake threshold"),
     visual_threshold: Optional[float] = Query(None, ge=0.40, le=0.95, description="Visual deepfake threshold"),
     threshold: Optional[float] = Query(None, ge=0.50, le=0.99, description="Legacy threshold alias"),

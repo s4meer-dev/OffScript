@@ -13,12 +13,13 @@ print("Loading Unified Deepfake Detector for Gradio UI...")
 detector = UnifiedDeepfakeDetector()
 
 
-def classify_media(file_obj, mode_selection, audio_thresh=0.85, visual_thresh=0.65):
+def classify_media(video_obj, audio_obj, mode_selection, audio_thresh=0.85, visual_thresh=0.65):
+    file_obj = video_obj if mode_selection == "Video Defect Detection" else audio_obj
     if not file_obj:
         return "Please upload an audio or video file.", {}, ""
 
     try:
-        mode = "audio" if mode_selection == "Audio Defect Detection" else "video"
+        mode = "video" if mode_selection == "Video Defect Detection" else "audio"
         file_path = file_obj if isinstance(file_obj, str) else getattr(file_obj, "name", str(file_obj))
 
         is_video = detector.is_video_file(file_path)
@@ -104,21 +105,37 @@ def classify_media(file_obj, mode_selection, audio_thresh=0.85, visual_thresh=0.
 with gr.Blocks(title="Audio / Video Deepfake Detector") as demo:
     gr.Markdown("# 🛡️ Deepfake Defect Detection & Localization Platform")
     gr.Markdown(
-        "Select between **Audio Defect Detection** (Wav2Vec2 speech transformer forensics) "
-        "and **Video Defect Detection** (AV-Deepfake1M facial, FFT frequency, and temporal flicker analysis)."
+        "Forensics powered by **Video Defect Detection** (AV-Deepfake1M facial, FFT frequency, and temporal flicker analysis) "
+        "and **Audio Defect Detection** (Wav2Vec2 speech transformer forensics)."
     )
 
     with gr.Row():
         with gr.Column():
             mode_selector = gr.Radio(
-                ["Audio Defect Detection", "Video Defect Detection"],
-                value="Audio Defect Detection",
+                ["Video Defect Detection", "Audio Defect Detection"],
+                value="Video Defect Detection",
                 label="Select Detection Mode",
             )
-            input_file = gr.File(
-                label="Upload Media File",
-                file_types=["audio", "video"],
+            video_input = gr.Video(
+                label="Upload & Preview Video (MP4, WebM, AVI, MOV)",
+                visible=True,
             )
+            audio_input = gr.Audio(
+                label="Upload & Preview Audio (WAV, MP3, FLAC, M4A, OGG)",
+                type="filepath",
+                visible=False,
+            )
+
+            def update_mode_visibility(selected_mode):
+                is_vid = selected_mode == "Video Defect Detection"
+                return gr.update(visible=is_vid), gr.update(visible=not is_vid)
+
+            mode_selector.change(
+                fn=update_mode_visibility,
+                inputs=[mode_selector],
+                outputs=[video_input, audio_input],
+            )
+
             with gr.Accordion("Advanced Calibration Thresholds", open=False):
                 audio_slider = gr.Slider(
                     minimum=0.50, maximum=0.99, value=0.85, step=0.05, label="Audio Fake Threshold"
@@ -135,7 +152,7 @@ with gr.Blocks(title="Audio / Video Deepfake Detector") as demo:
 
     submit_btn.click(
         fn=classify_media,
-        inputs=[input_file, mode_selector, audio_slider, visual_slider],
+        inputs=[video_input, audio_input, mode_selector, audio_slider, visual_slider],
         outputs=[output_verdict, output_probs, output_forensics],
     )
 

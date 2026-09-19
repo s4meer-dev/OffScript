@@ -31,14 +31,14 @@
             <div class="mode-selector-wrapper">
                 <label class="mode-label">Select Forensic Analysis Mode:</label>
                 <div class="mode-toggle-group">
-                    <button type="button" class="mode-btn active" id="btnModeAudio" data-mode="audio">
+                    <button type="button" class="mode-btn" id="btnModeAudio" data-mode="audio">
                         <span class="mode-icon">🎙️</span>
                         <div class="mode-text-container">
                             <span class="mode-title">Audio Defect Detection</span>
                             <span class="mode-desc">Speech Wav2Vec2 & Voice Clone Forensics</span>
                         </div>
                     </button>
-                    <button type="button" class="mode-btn" id="btnModeVideo" data-mode="video">
+                    <button type="button" class="mode-btn active" id="btnModeVideo" data-mode="video">
                         <span class="mode-icon">👁️</span>
                         <div class="mode-text-container">
                             <span class="mode-title">Video Defect Detection</span>
@@ -51,12 +51,12 @@
             <!-- Quick Reference Samples -->
             <div class="sample-chips">
                 <span class="sample-label">Quick Tests:</span>
-                <span id="audioSampleChips">
+                <span id="videoSampleChips">
+                    <button type="button" class="btn-chip" onclick="loadSampleMedia('sample_test_video.mp4')">🎬 Sample Video (MP4)</button>
+                </span>
+                <span id="audioSampleChips" style="display: none;">
                     <button type="button" class="btn-chip" onclick="loadSampleMedia('real_human_voice.wav')">🎧 Real Voice (WAV)</button>
                     <button type="button" class="btn-chip" onclick="loadSampleMedia('ai_voice_clone.wav')">🤖 Voice Clone (WAV)</button>
-                </span>
-                <span id="videoSampleChips" style="display: none;">
-                    <button type="button" class="btn-chip" onclick="loadSampleMedia('sample_test_video.mp4')">🎬 Sample Video (MP4)</button>
                 </span>
             </div>
         </section>
@@ -73,33 +73,47 @@
                 <div class="control-group">
                     <label for="thresholdPreset">Forensic Calibration:</label>
                     <select id="thresholdPreset" class="select-input">
-                        <option value="balanced" selected>🛡️ Balanced Mode (Threshold 85%)</option>
-                        <option value="strict">⚠️ Strict Forensics (Threshold 75%)</option>
-                        <option value="permissive">⚡ High Confidence Only (Threshold 92%)</option>
+                        <option value="balanced" selected>🛡️ Balanced Mode (Threshold 65%)</option>
+                        <option value="strict">⚠️ Strict Forensics (Threshold 50%)</option>
+                        <option value="permissive">⚡ High Confidence Only (Threshold 80%)</option>
                     </select>
                 </div>
             </div>
 
             <!-- Drag & Drop Zone -->
             <div class="drop-zone" id="dropZone">
-                <input type="file" id="mediaInput" accept="audio/*" class="file-input">
+                <input type="file" id="mediaInput" accept="video/*" class="file-input">
                 <div class="drop-content">
-                    <div class="upload-icon" id="dropIcon">🎙️</div>
-                    <p class="drop-title" id="dropTitle">Click to select or drag & drop audio file</p>
-                    <p class="drop-help" id="dropHelp">Supports pure Audio formats only (WAV, MP3, FLAC, M4A, OGG). Video files not permitted.</p>
+                    <div class="upload-icon" id="dropIcon">👁️</div>
+                    <p class="drop-title" id="dropTitle">Click to select or drag & drop video media</p>
+                    <p class="drop-help" id="dropHelp">Supports Video containers (MP4, WebM, AVI, MOV, MKV)</p>
                 </div>
             </div>
 
-            <!-- Selected File Info -->
+            <!-- Selected File Info & Media Preview -->
             <div id="fileInfo" class="file-info" style="display: none;">
                 <div class="file-meta">
-                    <span class="file-icon" id="fileIcon">📄</span>
+                    <span class="file-icon" id="fileIcon">🎬</span>
                     <div>
                         <div id="fileName" class="file-name">filename.mp4</div>
                         <div id="fileSize" class="file-size">0 KB</div>
                     </div>
                 </div>
                 <button type="button" id="btnRemoveFile" class="btn-remove" title="Remove file">✕</button>
+            </div>
+
+            <!-- Media Preview Box -->
+            <div id="previewBox" class="preview-box" style="display: none;">
+                <div class="preview-header">
+                    <div class="preview-title-group">
+                        <span class="preview-badge" id="previewBadge">Video Preview</span>
+                        <span id="previewAudioNotice" class="preview-notice">Synchronized video & audio playback</span>
+                    </div>
+                </div>
+                <div class="media-player-container">
+                    <video id="videoPlayer" controls playsinline preload="metadata" style="display: none;"></video>
+                    <audio id="audioPlayer" controls preload="metadata" style="display: none;"></audio>
+                </div>
             </div>
 
             <!-- Action Button -->

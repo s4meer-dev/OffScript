@@ -156,12 +156,22 @@ def test_fastapi_endpoints():
         print("Health Check:", health)
         assert health["status"] == "online"
 
-        # 2. HTML Frontend UI
+        # 2. HTML Frontend UI & Media Previews
         res = client.get("/")
         assert res.status_code == 200
         assert "Audio Defect Detection" in res.text
         assert "Video Defect Detection" in res.text
-        print("HTML Web UI: PASSED")
+        assert 'id="previewBox"' in res.text, "previewBox must be present in HTML UI!"
+        assert 'id="videoPlayer"' in res.text, "videoPlayer must be present in HTML UI!"
+        assert 'id="audioPlayer"' in res.text, "audioPlayer must be present in HTML UI!"
+        assert 'id="btnModeVideo" data-mode="video"' in res.text
+        print("HTML Web UI & Media Preview Elements: PASSED")
+
+        # 2b. Sample Video Endpoint
+        res_sample = client.get("/samples/sample_test_video.mp4")
+        assert res_sample.status_code == 200
+        assert "video" in res_sample.headers.get("content-type", "")
+        print("Sample Video Route: PASSED")
 
         # 3. Predict in Audio Mode with Audio File (Success, no visual in report)
         with open(TEST_AUDIO_PATH, "rb") as f:
