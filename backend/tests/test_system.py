@@ -166,6 +166,7 @@ def test_fastapi_endpoints():
         assert 'id="audioPlayer"' in res.text, "audioPlayer must be present in HTML UI!"
         assert 'id="btnModeVideo" data-mode="video"' in res.text
         assert 'id="btnModeAudio" data-mode="audio"' in res.text
+        assert 'id="thresholdSlider"' in res.text, "thresholdSlider must be present in HTML UI!"
         assert 'id="resultsCard"' in res.text, "resultsCard must be present in HTML UI!"
         assert 'id="diagnosticGrid"' in res.text, "diagnosticGrid must be present in HTML UI!"
         print("HTML Web UI & Media Preview Elements: PASSED")

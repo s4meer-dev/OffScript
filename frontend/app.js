@@ -20,6 +20,8 @@ const btnAnalyze = document.getElementById('btnAnalyze');
 const loadingIndicator = document.getElementById('loadingIndicator');
 const loadingStatusText = document.getElementById('loadingStatusText');
 const thresholdPreset = document.getElementById('thresholdPreset');
+const thresholdSlider = document.getElementById('thresholdSlider');
+const sliderValueText = document.getElementById('sliderValueText');
 const resultsCard = document.getElementById('resultsCard');
 const errorBanner = document.getElementById('errorBanner');
 const errorMessage = document.getElementById('errorMessage');
@@ -88,10 +90,15 @@ function setMode(mode) {
         loadingStatusText.textContent = 'Analyzing speech acoustic features & neural representations (Wav2Vec2)...';
 
         thresholdPreset.innerHTML = `
-            <option value="balanced" selected>🛡️ Balanced Mode (Threshold 85%)</option>
-            <option value="strict">⚠️ Strict Forensics (Threshold 75%)</option>
-            <option value="permissive">⚡ High Confidence Only (Threshold 92%)</option>
+            <option value="balanced" selected>🛡️ Balanced Mode (85%)</option>
+            <option value="strict">⚠️ Strict Forensics (75%)</option>
+            <option value="permissive">⚡ High Confidence Only (92%)</option>
+            <option value="custom">🎛️ Custom Fine-Tuned Threshold</option>
         `;
+        if (thresholdSlider) {
+            thresholdSlider.value = 85;
+            if (sliderValueText) sliderValueText.textContent = '85%';
+        }
     } else {
         btnModeVideo.classList.add('active');
         btnModeAudio.classList.remove('active');
@@ -105,10 +112,15 @@ function setMode(mode) {
         loadingStatusText.textContent = 'Analyzing video across spatial, spectral, deep identity, and temporal vectors...';
 
         thresholdPreset.innerHTML = `
-            <option value="balanced" selected>🛡️ Balanced Forensics (Threshold 50%)</option>
-            <option value="strict">⚠️ Strict Forensics (Threshold 40%)</option>
-            <option value="permissive">⚡ High Confidence Only (Threshold 70%)</option>
+            <option value="balanced" selected>🛡️ Balanced Forensics (50%)</option>
+            <option value="strict">⚠️ Strict Forensics (40%)</option>
+            <option value="permissive">⚡ High Confidence Only (70%)</option>
+            <option value="custom">🎛️ Custom Fine-Tuned Threshold</option>
         `;
+        if (thresholdSlider) {
+            thresholdSlider.value = 50;
+            if (sliderValueText) sliderValueText.textContent = '50%';
+        }
     }
 
     // Validate file compatibility if already selected
@@ -275,9 +287,15 @@ async function loadSampleMedia(filename) {
     }
 }
 
-// 5. Calibration Sensitivity Thresholds
+// 5. Calibration Sensitivity Thresholds & Slider Synchronization
 function getThresholds() {
+    const sliderVal = thresholdSlider ? parseFloat(thresholdSlider.value) / 100.0 : 0.50;
     const val = thresholdPreset.value;
+
+    if (val === 'custom') {
+        return { audio: sliderVal, visual: sliderVal };
+    }
+
     if (currentMode === 'audio') {
         if (val === 'strict') return { audio: 0.75, visual: 0.50 };
         if (val === 'permissive') return { audio: 0.92, visual: 0.50 };
@@ -285,8 +303,36 @@ function getThresholds() {
     } else {
         if (val === 'strict') return { audio: 0.85, visual: 0.40 };
         if (val === 'permissive') return { audio: 0.85, visual: 0.70 };
-        return { audio: 0.85, visual: 0.50 }; // balanced default
+        return { audio: 0.85, visual: sliderVal || 0.50 };
     }
+}
+
+if (thresholdSlider) {
+    thresholdSlider.addEventListener('input', (e) => {
+        const val = e.target.value;
+        if (sliderValueText) sliderValueText.textContent = `${val}%`;
+        if (thresholdPreset) thresholdPreset.value = 'custom';
+    });
+}
+
+if (thresholdPreset) {
+    thresholdPreset.addEventListener('change', (e) => {
+        const p = e.target.value;
+        if (!thresholdSlider) return;
+        if (p === 'balanced') {
+            const defVal = currentMode === 'audio' ? 85 : 50;
+            thresholdSlider.value = defVal;
+            if (sliderValueText) sliderValueText.textContent = `${defVal}%`;
+        } else if (p === 'strict') {
+            const defVal = currentMode === 'audio' ? 75 : 40;
+            thresholdSlider.value = defVal;
+            if (sliderValueText) sliderValueText.textContent = `${defVal}%`;
+        } else if (p === 'permissive') {
+            const defVal = currentMode === 'audio' ? 92 : 70;
+            thresholdSlider.value = defVal;
+            if (sliderValueText) sliderValueText.textContent = `${defVal}%`;
+        }
+    });
 }
 
 // 6. Run Forensic Analysis

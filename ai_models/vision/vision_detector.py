@@ -85,7 +85,28 @@ class DeepfakeVisionDetector:
         self.backbone.to(self.device)
         self.backbone.eval()
 
-        print(f"DeepfakeVisionDetector initialized on device '{self.device}' (Target FPS: {self.target_fps}).")
+        # Check for fine-tuned neural vision weights
+        self.finetuned_classifier = None
+        self.has_finetuned_model = False
+        finetuned_path = weights_dir / "finetuned_vision.pt"
+        if finetuned_path.exists() and finetuned_path.stat().st_size > 1000:
+            try:
+                from ai_models.training.finetune_vision import VisionDeepfakeModel
+                clf = VisionDeepfakeModel(num_classes=2, mode="head_only")
+                checkpoint = torch.load(str(finetuned_path), map_location=self.device)
+                if isinstance(checkpoint, dict) and "model_state_dict" in checkpoint:
+                    clf.load_state_dict(checkpoint["model_state_dict"], strict=False)
+                elif isinstance(checkpoint, dict) and "head_state_dict" in checkpoint:
+                    clf.head.load_state_dict(checkpoint["head_state_dict"])
+                clf.to(self.device)
+                clf.eval()
+                self.finetuned_classifier = clf
+                self.has_finetuned_model = True
+                print(f"Loaded fine-tuned vision classifier from '{finetuned_path.name}'.")
+            except Exception as e:
+                print(f"Note: Could not load fine-tuned vision weights: {e}")
+
+        print(f"DeepfakeVisionDetector initialized on device '{self.device}' (Target FPS: {self.target_fps}, FineTuned: {self.has_finetuned_model}).")
 
     def _extract_video_frames(
         self, video_path: str
@@ -343,14 +364,15 @@ class DeepfakeVisionDetector:
         overall_flicker = float(np.mean(flicker_scores[1:])) if len(flicker_scores) > 1 else 0.0
         return overall_flicker, flicker_scores
 
-    def _extract_deep_features(self, face_crops: List[np.ndarray]) -> Tuple[float, float]:
+    def _extract_deep_features(self, face_crops: List[np.ndarray]) -> Tuple[float, float, Optional[float]]:
         """
         Pass face crops through pretrained MobileNetV3 backbone to evaluate
-        semantic biometric identity consistency across consecutive frames.
-        Returns: (identity_drift_score, mean_cosine_similarity)
+        semantic biometric identity consistency across consecutive frames, and
+        through the fine-tuned neural classifier if loaded.
+        Returns: (identity_drift_score, mean_cosine_similarity, neural_fake_prob)
         """
         if not face_crops:
-            return 0.0, 1.0
+            return 0.0, 1.0, None
 
         sample_crops = face_crops[:24]  # Limit to 24 frames for swift inference
         tensors = []
@@ -366,8 +388,18 @@ class DeepfakeVisionDetector:
             norm = torch.norm(features, dim=-1, keepdim=True) + 1e-6
             normalized_features = features / norm
 
+        neural_fake_prob = None
+        if self.has_finetuned_model and self.finetuned_classifier is not None:
+            try:
+                with torch.no_grad():
+                    logits = self.finetuned_classifier(batch)
+                    probs = torch.softmax(logits, dim=1)  # Class 0: fake, Class 1: real
+                    neural_fake_prob = float(probs[:, 0].mean().cpu().item())
+            except Exception:
+                neural_fake_prob = None
+
         if normalized_features.size(0) < 2:
-            return 0.0, 1.0
+            return 0.0, 1.0, neural_fake_prob
 
         # Cosine similarity between consecutive frames
         sims = []
@@ -380,7 +412,7 @@ class DeepfakeVisionDetector:
         # Authentic video: same person speaking maintains mean similarity 0.88 - 0.99.
         # Deepfakes / face swaps / AI morphs exhibit identity drift or sudden jumps (mean sim < 0.80).
         drift_score = float(np.clip((0.84 - mean_sim) / 0.22, 0.0, 1.0))
-        return drift_score, round(mean_sim, 4)
+        return drift_score, round(mean_sim, 4), neural_fake_prob
 
     def _localize_temporal_segments(
         self, timestamps: List[float], frame_tampering_scores: List[float], threshold: float = 0.45
@@ -483,7 +515,7 @@ class DeepfakeVisionDetector:
 
             # Temporal and deep feature consistency
             temporal_flicker, per_frame_flickers = self._analyze_temporal_consistency(face_crops)
-            deep_anomaly, identity_sim = self._extract_deep_features(face_crops)
+            deep_anomaly, identity_sim, neural_fake_prob = self._extract_deep_features(face_crops)
 
             # Merge temporal scores back to frame records
             for idx, f_score in enumerate(per_frame_flickers):
@@ -504,17 +536,26 @@ class DeepfakeVisionDetector:
                 "deep_anomaly": deep_anomaly,
             }
 
-            # Count corroborated branches with significant elevation
-            elevated_branches = [k for k, v in branches.items() if v >= 0.40]
-            num_elevated = len(elevated_branches)
+            if self.has_finetuned_model and neural_fake_prob is not None:
+                branches["neural_classifier"] = neural_fake_prob
+                base_prob = (
+                    0.25 * mean_boundary +
+                    0.25 * mean_fft +
+                    0.15 * temporal_flicker +
+                    0.15 * deep_anomaly +
+                    0.20 * neural_fake_prob
+                )
+            else:
+                base_prob = (
+                    0.30 * mean_boundary +
+                    0.30 * mean_fft +
+                    0.20 * temporal_flicker +
+                    0.20 * deep_anomaly
+                )
 
-            # Base weighted consensus
-            base_prob = (
-                0.30 * mean_boundary +
-                0.30 * mean_fft +
-                0.20 * temporal_flicker +
-                0.20 * deep_anomaly
-            )
+            # Count corroborated branches with significant elevation
+            elevated_branches = [k for k, v in branches.items() if v is not None and v >= 0.40]
+            num_elevated = len(elevated_branches)
 
             # Calibrated Multi-Branch Bayesian Fusion:
             # - If 2+ branches corroborate, probability scales up decisively.
@@ -590,6 +631,12 @@ class DeepfakeVisionDetector:
             else:
                 findings_log.append("[ANOMALY] Biometric identity embedding variance detected across frames, suggesting identity drift or morphing.")
 
+            if self.has_finetuned_model and neural_fake_prob is not None:
+                if neural_fake_prob > 0.50:
+                    findings_log.append(f"[ANOMALY] Fine-tuned neural classifier indicated deepfake visual patterns ({neural_fake_prob * 100:.1f}% risk).")
+                else:
+                    findings_log.append(f"[AUTHENTIC] Fine-tuned neural classifier verified natural facial representation ({(1.0 - neural_fake_prob) * 100:.1f}% confidence).")
+
             # Diagnostic Vectors Breakdown
             def get_rating(val: float) -> str:
                 if val < 0.25: return "Pristine (Authentic)"
@@ -627,6 +674,15 @@ class DeepfakeVisionDetector:
                     "description": "Quantifies semantic biometric identity stability using pretrained deep embeddings.",
                 },
             }
+
+            if self.has_finetuned_model and neural_fake_prob is not None:
+                diagnostic_breakdown["neural_classifier"] = {
+                    "name": "Fine-Tuned Neural Classifier (MobileNetV3)",
+                    "score": round(neural_fake_prob, 3),
+                    "percentage": round(neural_fake_prob * 100, 1),
+                    "rating": get_rating(neural_fake_prob),
+                    "description": "Inferred probability from fine-tuned deep visual classification head.",
+                }
 
             # Temporal Tampering Localization
             frame_tampering_scores = [r["anomaly_score"] for r in frame_records]

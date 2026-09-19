@@ -72,12 +72,20 @@
 
             <div class="controls-bar">
                 <div class="control-group">
-                    <label for="thresholdPreset">Forensic Sensitivity Calibration:</label>
+                    <label for="thresholdPreset">Forensic Calibration Preset:</label>
                     <select id="thresholdPreset" class="select-input">
-                        <option value="balanced" selected>🛡️ Balanced Forensics (Threshold 50%)</option>
-                        <option value="strict">⚠️ Strict Forensics (Threshold 40%)</option>
-                        <option value="permissive">⚡ High Confidence Only (Threshold 70%)</option>
+                        <option value="balanced" selected>🛡️ Balanced Forensics (50%)</option>
+                        <option value="strict">⚠️ Strict Forensics (40%)</option>
+                        <option value="permissive">⚡ High Confidence Only (70%)</option>
+                        <option value="custom">🎛️ Custom Fine-Tuned Threshold</option>
                     </select>
+                </div>
+                <div class="control-group slider-group">
+                    <div class="slider-header">
+                        <label for="thresholdSlider">Fine-Tune Sensitivity Threshold:</label>
+                        <span id="sliderValueText" class="slider-value-badge">50%</span>
+                    </div>
+                    <input type="range" id="thresholdSlider" min="10" max="90" step="5" value="50" class="range-slider">
                 </div>
             </div>
 
