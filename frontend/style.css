@@ -151,6 +151,86 @@ body {
     line-height: 1.5;
 }
 
+/* Mode Selector */
+.mode-selector-wrapper {
+    margin-bottom: 24px;
+    text-align: center;
+}
+
+.mode-label {
+    display: block;
+    font-size: 0.85rem;
+    font-weight: 700;
+    color: var(--text-muted);
+    margin-bottom: 12px;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+}
+
+.mode-toggle-group {
+    display: flex;
+    justify-content: center;
+    gap: 16px;
+    flex-wrap: wrap;
+    max-width: 720px;
+    margin: 0 auto;
+}
+
+.mode-btn {
+    flex: 1;
+    min-width: 280px;
+    background: var(--surface);
+    border: 2px solid var(--border);
+    border-radius: 12px;
+    padding: 16px 20px;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    cursor: pointer;
+    text-align: left;
+    transition: all 0.25s ease;
+    color: var(--text);
+}
+
+.mode-btn:hover {
+    border-color: rgba(96, 165, 250, 0.6);
+    background: var(--surface-hover);
+    transform: translateY(-2px);
+}
+
+.mode-btn.active {
+    background: rgba(59, 130, 246, 0.15);
+    border-color: var(--accent);
+    box-shadow: 0 0 16px var(--accent-glow);
+}
+
+.mode-icon {
+    font-size: 2.2rem;
+    flex-shrink: 0;
+}
+
+.mode-text-container {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.mode-title {
+    font-size: 1rem;
+    font-weight: 700;
+    color: var(--text);
+}
+
+.mode-btn.active .mode-title {
+    color: #60a5fa;
+}
+
+.mode-desc {
+    font-size: 0.8rem;
+    color: var(--text-muted);
+    line-height: 1.3;
+}
+
 .sample-chips {
     display: flex;
     justify-content: center;
@@ -933,6 +1013,42 @@ body {
     max-height: 280px;
     overflow-y: auto;
     color: #38bdf8;
+}
+
+/* Audio Forensics */
+.audio-metrics-grid {
+    margin-bottom: 24px;
+}
+
+.audio-diag-card {
+    padding: 20px;
+}
+
+.audio-metrics-list {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    margin-top: 16px;
+}
+
+.metric-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 0.9rem;
+    padding: 6px 0;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    color: var(--text-muted);
+}
+
+.metric-row strong {
+    color: var(--text);
+}
+
+.badge-audio {
+    background: rgba(168, 85, 247, 0.2);
+    color: #c084fc;
+    border: 1px solid rgba(168, 85, 247, 0.4);
 }
 
 /* Footer */
