@@ -159,12 +159,12 @@ def test_fastapi_endpoints():
         # 2. HTML Frontend UI & Media Previews
         res = client.get("/")
         assert res.status_code == 200
-        assert "Audio Defect Detection" in res.text
-        assert "Video Defect Detection" in res.text
+        assert "Video Deepfake & AI Manipulation Forensics" in res.text
         assert 'id="previewBox"' in res.text, "previewBox must be present in HTML UI!"
         assert 'id="videoPlayer"' in res.text, "videoPlayer must be present in HTML UI!"
         assert 'id="audioPlayer"' in res.text, "audioPlayer must be present in HTML UI!"
-        assert 'id="btnModeVideo" data-mode="video"' in res.text
+        assert 'id="resultsCard"' in res.text, "resultsCard must be present in HTML UI!"
+        assert 'id="diagnosticGrid"' in res.text, "diagnosticGrid must be present in HTML UI!"
         print("HTML Web UI & Media Preview Elements: PASSED")
 
         # 2b. Sample Video Endpoint

@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Multimodal Deepfake Detector</title>
+    <title>Video Deepfake Forensics & AI Defect Detection</title>
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🛡️</text></svg>">
     <link rel="stylesheet" href="/static/style.css">
 </head>
@@ -12,7 +12,8 @@
         <div class="header-container">
             <div class="logo">
                 <span class="logo-icon">🛡️</span>
-                <span class="logo-text">Multimodal Deepfake Detector</span>
+                <span class="logo-text">Video Forensics AI</span>
+                <span class="logo-badge">PRO FORENSICS</span>
             </div>
             <div class="header-actions">
                 <a href="/docs" target="_blank" class="nav-link">API Docs</a>
@@ -24,40 +25,13 @@
     <main class="main-container">
         <!-- Hero Section -->
         <section class="hero-section">
-            <h1>Audio-Visual Deepfake Detection</h1>
-            <p class="subtitle">Unified multimodal forensics powered by Wav2Vec2 speech transformers and AV-Deepfake1M benchmarks.</p>
-            
-            <!-- Mode Selector Section -->
-            <div class="mode-selector-wrapper">
-                <label class="mode-label">Select Forensic Analysis Mode:</label>
-                <div class="mode-toggle-group">
-                    <button type="button" class="mode-btn" id="btnModeAudio" data-mode="audio">
-                        <span class="mode-icon">🎙️</span>
-                        <div class="mode-text-container">
-                            <span class="mode-title">Audio Defect Detection</span>
-                            <span class="mode-desc">Speech Wav2Vec2 & Voice Clone Forensics</span>
-                        </div>
-                    </button>
-                    <button type="button" class="mode-btn active" id="btnModeVideo" data-mode="video">
-                        <span class="mode-icon">👁️</span>
-                        <div class="mode-text-container">
-                            <span class="mode-title">Video Defect Detection</span>
-                            <span class="mode-desc">Facial Artifacts & Spatial-Temporal Forensics</span>
-                        </div>
-                    </button>
-                </div>
-            </div>
+            <h1>Video Deepfake & AI Manipulation Forensics</h1>
+            <p class="subtitle">Multi-vector spatial-temporal forensic inspection: 2D FFT spectral lattices, facial boundary seams, inter-frame motion stability, and deep biometric identity coherence.</p>
 
             <!-- Quick Reference Samples -->
             <div class="sample-chips">
-                <span class="sample-label">Quick Tests:</span>
-                <span id="videoSampleChips">
-                    <button type="button" class="btn-chip" onclick="loadSampleMedia('sample_test_video.mp4')">🎬 Sample Video (MP4)</button>
-                </span>
-                <span id="audioSampleChips" style="display: none;">
-                    <button type="button" class="btn-chip" onclick="loadSampleMedia('real_human_voice.wav')">🎧 Real Voice (WAV)</button>
-                    <button type="button" class="btn-chip" onclick="loadSampleMedia('ai_voice_clone.wav')">🤖 Voice Clone (WAV)</button>
-                </span>
+                <span class="sample-label">Quick Forensic Benchmark:</span>
+                <button type="button" class="btn-chip" onclick="loadSampleMedia('sample_test_video.mp4')">🎬 Sample Video (MP4)</button>
             </div>
         </section>
 
@@ -71,11 +45,11 @@
 
             <div class="controls-bar">
                 <div class="control-group">
-                    <label for="thresholdPreset">Forensic Calibration:</label>
+                    <label for="thresholdPreset">Forensic Sensitivity Calibration:</label>
                     <select id="thresholdPreset" class="select-input">
-                        <option value="balanced" selected>🛡️ Balanced Mode (Threshold 65%)</option>
-                        <option value="strict">⚠️ Strict Forensics (Threshold 50%)</option>
-                        <option value="permissive">⚡ High Confidence Only (Threshold 80%)</option>
+                        <option value="balanced" selected>🛡️ Balanced Forensics (Threshold 50%)</option>
+                        <option value="strict">⚠️ Strict Forensics (Threshold 40%)</option>
+                        <option value="permissive">⚡ High Confidence Only (Threshold 70%)</option>
                     </select>
                 </div>
             </div>
@@ -85,12 +59,12 @@
                 <input type="file" id="mediaInput" accept="video/*" class="file-input">
                 <div class="drop-content">
                     <div class="upload-icon" id="dropIcon">👁️</div>
-                    <p class="drop-title" id="dropTitle">Click to select or drag & drop video media</p>
-                    <p class="drop-help" id="dropHelp">Supports Video containers (MP4, WebM, AVI, MOV, MKV)</p>
+                    <p class="drop-title" id="dropTitle">Click to select or drag & drop video for deepfake forensics</p>
+                    <p class="drop-help" id="dropHelp">Supports Video containers: MP4, WebM, AVI, MOV, MKV, FLV</p>
                 </div>
             </div>
 
-            <!-- Selected File Info & Media Preview -->
+            <!-- Selected File Info -->
             <div id="fileInfo" class="file-info" style="display: none;">
                 <div class="file-meta">
                     <span class="file-icon" id="fileIcon">🎬</span>
@@ -106,8 +80,8 @@
             <div id="previewBox" class="preview-box" style="display: none;">
                 <div class="preview-header">
                     <div class="preview-title-group">
-                        <span class="preview-badge" id="previewBadge">Video Preview</span>
-                        <span id="previewAudioNotice" class="preview-notice">Synchronized video & audio playback</span>
+                        <span class="preview-badge badge-video" id="previewBadge">🎬 Video & Audio Preview</span>
+                        <span id="previewAudioNotice" class="preview-notice">Full frame rendering & synchronized audio track ready</span>
                     </div>
                 </div>
                 <div class="media-player-container">
@@ -118,93 +92,192 @@
 
             <!-- Action Button -->
             <div class="action-row">
-                <button type="button" id="btnAnalyze" class="btn-primary" disabled>Analyze Media</button>
+                <button type="button" id="btnAnalyze" class="btn-primary" disabled>Run Video Forensic Analysis</button>
             </div>
 
             <!-- Loading Spinner -->
             <div id="loadingIndicator" class="loading-state" style="display: none;">
                 <div class="spinner"></div>
-                <p id="loadingStatusText">Analyzing media forensics...</p>
+                <p id="loadingStatusText">Analyzing video across spatial, spectral, deep identity, and temporal vectors...</p>
             </div>
         </section>
 
-        <!-- Results Card -->
+        <!-- Comprehensive Video Forensic Dashboard -->
         <section id="resultsCard" class="card results-card" style="display: none;">
+            <!-- Forensic Verdict Hero -->
             <div class="results-header">
-                <h2>Forensic Verdict</h2>
-                <div id="verdictBadge" class="verdict-badge">Authentic</div>
+                <div>
+                    <div class="section-eyebrow">FORENSIC ANALYSIS REPORT</div>
+                    <h2 id="verdictTitleText">Video Authenticity Verdict</h2>
+                    <p id="techniqueSubtext" class="verdict-technique-subtext">Authentic Optical Capture</p>
+                </div>
+                <div class="verdict-badge-group">
+                    <div id="riskBadge" class="risk-badge risk-low">LOW RISK</div>
+                    <div id="verdictBadge" class="verdict-badge verdict-real">Authentic</div>
+                </div>
             </div>
 
-            <!-- Confidence Bar -->
+            <!-- Dual Authenticity vs Manipulation Meter -->
             <div class="confidence-container">
                 <div class="confidence-labels">
-                    <span>Authenticity Confidence</span>
+                    <span id="confidenceLabel">Authenticity Confidence</span>
                     <span id="confidenceValue" class="confidence-number">0.0%</span>
                 </div>
                 <div class="progress-bar-bg">
                     <div id="confidenceBar" class="progress-bar-fill" style="width: 0%;"></div>
                 </div>
-            </div>
-
-            <!-- Modality Breakdown Grid -->
-            <div id="modalityGrid" class="modality-grid single-card">
-                <!-- Audio Forensic Card -->
-                <div id="audioCard" class="sub-card">
-                    <div class="sub-card-header">
-                        <span class="sub-icon">🎙️</span>
-                        <h3>Acoustic Forensics</h3>
-                    </div>
-                    <div class="metric-row">
-                        <span>Speech Verdict:</span>
-                        <strong id="audioVerdict">-</strong>
-                    </div>
-                    <div class="metric-row">
-                        <span>Confidence:</span>
-                        <strong id="audioConfidence">-</strong>
-                    </div>
-                    <div class="metric-row">
-                        <span>Duration:</span>
-                        <strong id="audioDuration">-</strong>
-                    </div>
-                </div>
-
-                <!-- Visual Forensic Card -->
-                <div id="visualCard" class="sub-card" style="display: none;">
-                    <div class="sub-card-header">
-                        <span class="sub-icon">👁️</span>
-                        <h3>Visual Forensics</h3>
-                    </div>
-                    <div class="metric-row">
-                        <span>Vision Verdict:</span>
-                        <strong id="visualVerdict">-</strong>
-                    </div>
-                    <div class="metric-row">
-                        <span>Confidence:</span>
-                        <strong id="visualConfidence">-</strong>
-                    </div>
-                    <div class="metric-row">
-                        <span>Faces / Frames:</span>
-                        <strong id="visualFrames">-</strong>
-                    </div>
+                <div class="confidence-footer">
+                    <span>Authentic Probability: <strong id="probRealValue">0.0%</strong></span>
+                    <span>Manipulation Risk: <strong id="probFakeValue">0.0%</strong></span>
                 </div>
             </div>
 
-            <!-- Tampering Segments -->
+            <!-- Multi-Vector Diagnostic Radar Grid -->
+            <div class="dashboard-section-header">
+                <h3>🔍 Multi-Vector Forensic Diagnostics</h3>
+                <span class="section-help-text">Independent multi-branch evidence corroborated against AV-Deepfake1M benchmarks</span>
+            </div>
+
+            <div id="diagnosticGrid" class="diagnostic-grid">
+                <!-- Vector 1: Boundary & Blending -->
+                <div class="diag-card" id="diagBoundaryCard">
+                    <div class="diag-header">
+                        <span class="diag-icon">✂️</span>
+                        <div class="diag-title-box">
+                            <span class="diag-name">Facial Boundary Seams</span>
+                            <span class="diag-rating" id="ratingBoundary">Pristine</span>
+                        </div>
+                    </div>
+                    <div class="diag-meter-bg">
+                        <div class="diag-meter-fill" id="meterBoundary" style="width: 0%;"></div>
+                    </div>
+                    <div class="diag-footer">
+                        <span class="diag-score" id="scoreBoundary">0.0%</span>
+                        <span class="diag-desc">Edge gradient & color bleed analysis</span>
+                    </div>
+                </div>
+
+                <!-- Vector 2: 2D Spectral Lattice Grid -->
+                <div class="diag-card" id="diagFftCard">
+                    <div class="diag-header">
+                        <span class="diag-icon">⚡</span>
+                        <div class="diag-title-box">
+                            <span class="diag-name">2D Spectral Lattice (FFT)</span>
+                            <span class="diag-rating" id="ratingFft">Natural</span>
+                        </div>
+                    </div>
+                    <div class="diag-meter-bg">
+                        <div class="diag-meter-fill" id="meterFft" style="width: 0%;"></div>
+                    </div>
+                    <div class="diag-footer">
+                        <span class="diag-score" id="scoreFft">0.0%</span>
+                        <span class="diag-desc">GAN / Diffusion deconvolution grid spikes</span>
+                    </div>
+                </div>
+
+                <!-- Vector 3: Temporal Motion Stability -->
+                <div class="diag-card" id="diagTemporalCard">
+                    <div class="diag-header">
+                        <span class="diag-icon">🎞️</span>
+                        <div class="diag-title-box">
+                            <span class="diag-name">Temporal Motion Stability</span>
+                            <span class="diag-rating" id="ratingTemporal">Smooth</span>
+                        </div>
+                    </div>
+                    <div class="diag-meter-bg">
+                        <div class="diag-meter-fill" id="meterTemporal" style="width: 0%;"></div>
+                    </div>
+                    <div class="diag-footer">
+                        <span class="diag-score" id="scoreTemporal">0.0%</span>
+                        <span class="diag-desc">Aligned high-pass micro-jitter & warping</span>
+                    </div>
+                </div>
+
+                <!-- Vector 4: Deep Feature Identity Coherence -->
+                <div class="diag-card" id="diagDeepCard">
+                    <div class="diag-header">
+                        <span class="diag-icon">🧠</span>
+                        <div class="diag-title-box">
+                            <span class="diag-name">Deep Identity Coherence</span>
+                            <span class="diag-rating" id="ratingDeep">Stable</span>
+                        </div>
+                    </div>
+                    <div class="diag-meter-bg">
+                        <div class="diag-meter-fill" id="meterDeep" style="width: 0%;"></div>
+                    </div>
+                    <div class="diag-footer">
+                        <span class="diag-score" id="scoreDeep">0.0%</span>
+                        <span class="diag-desc">MobileNetV3 neural identity stability</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Forensic Observations & Findings Log -->
+            <div class="findings-section">
+                <div class="dashboard-section-header">
+                    <h3>📋 Forensic Observations & Evidence Log</h3>
+                </div>
+                <div id="findingsList" class="findings-list"></div>
+            </div>
+
+            <!-- Frame-by-Frame Timeline Analysis -->
+            <div class="timeline-section">
+                <div class="dashboard-section-header">
+                    <h3>⏱️ Frame-by-Frame Forensic Timeline</h3>
+                    <span class="section-help-text" id="timelineHelpText">Sampled frames evaluated across video duration</span>
+                </div>
+                <div id="frameGallery" class="frame-gallery"></div>
+            </div>
+
+            <!-- Localized Tampering Intervals -->
             <div id="tamperingSection" class="tampering-section" style="display: none;">
-                <h3>Temporal Tampering Localization</h3>
+                <h3>🚨 Temporal Tampering Localization (Detected Manipulation Intervals)</h3>
                 <div id="tamperingList" class="tampering-list"></div>
             </div>
 
-            <!-- Collapsible Raw Data -->
+            <!-- Video Forensic Specifications -->
+            <div class="meta-section">
+                <div class="dashboard-section-header">
+                    <h3>📊 Technical Media & Inference Specifications</h3>
+                </div>
+                <div class="meta-grid">
+                    <div class="meta-item">
+                        <span class="meta-label">Resolution</span>
+                        <strong class="meta-value" id="metaResolution">-</strong>
+                    </div>
+                    <div class="meta-item">
+                        <span class="meta-label">Framerate</span>
+                        <strong class="meta-value" id="metaFps">-</strong>
+                    </div>
+                    <div class="meta-item">
+                        <span class="meta-label">Duration</span>
+                        <strong class="meta-value" id="metaDuration">-</strong>
+                    </div>
+                    <div class="meta-item">
+                        <span class="meta-label">Frames Analyzed</span>
+                        <strong class="meta-value" id="metaFramesAnalyzed">-</strong>
+                    </div>
+                    <div class="meta-item">
+                        <span class="meta-label">Face Detection Rate</span>
+                        <strong class="meta-value" id="metaFacePresence">-</strong>
+                    </div>
+                    <div class="meta-item">
+                        <span class="meta-label">Processing Latency</span>
+                        <strong class="meta-value" id="metaLatency">-</strong>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Collapsible Raw JSON Forensic Report -->
             <details class="raw-data-details">
-                <summary>Inspect Raw JSON Report</summary>
+                <summary>Inspect Complete Raw JSON Diagnostic Report</summary>
                 <pre id="jsonOutput" class="json-box"></pre>
             </details>
         </section>
     </main>
 
     <footer class="app-footer">
-        <p>Multimodal Deepfake Detection & Localization Platform &copy; 2026</p>
+        <p>Video Deepfake Forensics & AI Defect Detection Platform &copy; 2026 | Powered by Computer Vision & AV-Deepfake1M Benchmarks</p>
     </footer>
 
     <script src="/static/app.js"></script>
