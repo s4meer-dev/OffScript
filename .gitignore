@@ -1,0 +1,34 @@
+# Python cache and bytecode
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyo
+
+# Virtual environments
+venv/
+.venv/
+env/
+ENV/
+
+# Large model binaries and checkpoints (>100MB GitHub limit)
+# Note: Use `python download_model.py` to download local weights or let detector.py auto-load from Hugging Face
+model/model.safetensors
+*.safetensors
+*.bin
+*.pt
+*.pth
+*.ckpt
+
+# IDE and OS metadata
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# Logs and training runs
+*.log
+runs/
+*.tfevents*

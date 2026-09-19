@@ -1,0 +1,25 @@
+cff-version: 1.2.0
+message: "If you find this work useful in your research, please cite it."
+preferred-citation:
+  type: conference-paper
+  title: "AV-Deepfake1M: A Large-Scale LLM-Driven Audio-Visual Deepfake Dataset"
+  authors:
+  - family-names: "Cai"
+    given-names: "Zhixi"
+  - family-names: "Ghosh"
+    given-names: "Shreya"
+  - family-names: "Adatia"
+    given-names: "Aman Pankaj"
+  - family-names: "Hayat"
+    given-names: "Munawar"
+  - family-names: "Dhall"
+    given-names: "Abhinav"
+  - family-names: "Stefanov"
+    given-names: "Kalin"
+  collection-title: "Proceedings of the 32nd ACM International Conference on Multimedia"
+  year: 2023
+  location:
+    name: "Melbourne, Australia"
+  start: 7414
+  end: 7423
+  doi: "10.1145/3664647.3680795"
