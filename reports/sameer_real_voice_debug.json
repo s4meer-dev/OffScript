@@ -4,43 +4,43 @@
     "media_type": "audio",
     "overall_verdict": "REAL",
     "overall_prediction": "real",
-    "overall_confidence": 0.7531,
+    "overall_confidence": 0.7397,
     "is_fake": false,
     "verdict": "Authentic Human Voice Recording (Camera / Physical Microphone)",
     "verdict_title": "Authentic Human Voice Recording (Camera / Physical Microphone)",
     "risk_level": "LOW (AUTHENTIC)",
     "probabilities": {
-        "real": 0.7249,
-        "fake": 0.2751
+        "real": 0.7202,
+        "fake": 0.2798
     },
     "audio_analysis": {
         "status": "success",
         "prediction": "REAL",
         "is_fake": false,
-        "confidence": 0.7249,
+        "confidence": 0.7202,
         "calibrated_confidence": 1.0,
         "real_probability": 0.0,
         "fake_probability": 1.0,
         "threshold": 0.85,
         "model": "Wav2Vec2 Deepfake Detector",
-        "chunks_analyzed": 4,
-        "fake_chunks": 4,
+        "chunks_analyzed": 3,
+        "fake_chunks": 3,
         "temporal_segments": [
             {
                 "start_s": 0.0,
-                "end_s": 9.42
+                "end_s": 8.0
             }
         ],
-        "duration": 9.42,
-        "duration_seconds": 9.42,
+        "duration": 8.82,
+        "duration_seconds": 8.82,
         "preprocessing_metadata": {
             "original_sample_rate": 16000,
             "target_sample_rate": 16000,
-            "duration_seconds": 9.42,
-            "rms": 0.09649,
-            "peak_amplitude": 0.97047,
+            "duration_seconds": 8.82,
+            "rms": 0.0875,
+            "peak_amplitude": 0.99046,
             "clipping_percentage": 0.0,
-            "silence_percentage": 1.77
+            "silence_percentage": 1.74
         },
         "chunk_details": [
             {
@@ -63,19 +63,12 @@
                 "fake_probability": 1.0,
                 "real_probability": 0.0,
                 "prediction": "FAKE"
-            },
-            {
-                "start_s": 5.42,
-                "end_s": 9.42,
-                "fake_probability": 0.9999,
-                "real_probability": 0.0001,
-                "prediction": "FAKE"
             }
         ],
-        "inference_time_seconds": 1.863,
+        "inference_time_seconds": 1.346,
         "probabilities": {
-            "real": 0.7249,
-            "fake": 0.2751
+            "real": 0.7202,
+            "fake": 0.2798
         },
         "audio_fake_segments": [],
         "activated": true,
@@ -85,11 +78,11 @@
     "camera_verification_reason": "Camera/Microphone acoustic capture verified",
     "fake_segments": [],
     "audio_fake_segments": [],
-    "duration_seconds": 9.42,
-    "inference_time_seconds": 1.931,
+    "duration_seconds": 8.82,
+    "inference_time_seconds": 1.401,
     "filename": "live_audio_mic.wav",
     "audio_verdict": "REAL",
-    "audio_confidence": 0.7531,
+    "audio_confidence": 0.7397,
     "speech_verdict": "REAL",
-    "speech_confidence": 0.7531
+    "speech_confidence": 0.7397
 }
