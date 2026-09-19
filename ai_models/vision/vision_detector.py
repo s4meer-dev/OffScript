@@ -461,6 +461,104 @@ class DeepfakeVisionDetector:
         drift_score = float(np.clip((0.84 - mean_sim) / 0.22, 0.0, 1.0))
         return drift_score, round(mean_sim, 4), neural_fake_prob
 
+    def _analyze_generative_diffusion(
+        self, frames: List[np.ndarray], face_crops: List[np.ndarray]
+    ) -> Tuple[float, Dict[str, Any]]:
+        """
+        Comprehensive forensic analysis for Generative AI Video (Text-to-Video / Diffusion models:
+        Sora, Kling, Runway Gen-3, Luma, Hunyuan, Hedra, SadTalker):
+        1. 2D FFT Radial Power Spectrum Decay (PSD slope alpha):
+           Natural optical camera lenses decay at 1 / f^alpha with alpha in [1.8, 2.85].
+           Latent diffusion models suffer from VAE decoder compression bottleneck, causing
+           unnatural steep spectral dropoff (alpha > 3.05).
+        2. Ocular Dynamics & Biological Blink Invariance:
+           Authentic humans blink or exhibit micro-saccades periodically (std > 0.030 across 10-40 frames).
+           Generative talking heads suffer from frozen ocular geometry / unblinking stare (std < 0.018).
+        3. Background Latent Breathing & Texture Drift:
+           Measures background optical stability in non-face regions to detect dream-like latent ripple.
+        Returns: (generative_diffusion_score [0.0, 1.0], details_dict)
+        """
+        if not frames:
+            return 0.0, {"mean_slope": -2.5, "spectral_score": 0.0, "ocular_score": 0.0, "latent_drift_score": 0.0}
+
+        # 1. 2D FFT Radial Power Spectrum Decay Slope across full frames
+        slopes = []
+        step = max(1, len(frames) // 16)
+        sample_frames = frames[::step][:16]
+
+        for f in sample_frames:
+            try:
+                gray = cv2.cvtColor(f, cv2.COLOR_BGR2GRAY)
+                gray = cv2.resize(gray, (256, 256))
+                f_shift = np.fft.fftshift(np.fft.fft2(gray))
+                psd = np.abs(f_shift) ** 2
+                h, w = psd.shape
+                cy, cx = h // 2, w // 2
+                y, x = np.ogrid[:h, :w]
+                r = np.sqrt((x - cx) ** 2 + (y - cy) ** 2).astype(int)
+                rad_mean = [psd[r == rad].mean() for rad in range(12, 105)]
+                freqs = np.arange(12, 105)
+                slope, _ = np.polyfit(np.log(freqs), np.log(rad_mean), 1)
+                slopes.append(slope)
+            except Exception:
+                continue
+
+        mean_slope = float(np.mean(slopes)) if slopes else -2.5
+        # Natural optical lenses: -2.0 to -2.85. Diffusion VAE decay: steeper than -3.10
+        spectral_score = float(np.clip((-mean_slope - 2.85) / 0.38, 0.0, 1.0))
+
+        # 2. Ocular dynamics & blink variance across face crops
+        ocular_score = 0.0
+        eye_std = 0.05
+        valid_crops = [fc for fc in face_crops if fc is not None and fc.size > 0]
+        if len(valid_crops) >= 8:
+            eye_dark_ratios = []
+            for fc in valid_crops:
+                try:
+                    h, w = fc.shape[:2]
+                    eye_strip = cv2.cvtColor(fc[int(h * 0.25):int(h * 0.50), int(w * 0.15):int(w * 0.85)], cv2.COLOR_BGR2GRAY)
+                    dark_ratio = float(np.mean(eye_strip < 45))
+                    eye_dark_ratios.append(dark_ratio)
+                except Exception:
+                    continue
+
+            if len(eye_dark_ratios) >= 8:
+                eye_std = float(np.std(eye_dark_ratios))
+                # Real humans blink or shift gaze (std > 0.030). Unblinking AI stare: std < 0.018
+                ocular_score = float(np.clip((0.028 - eye_std) / 0.016, 0.0, 1.0))
+
+        # 3. Background latent breathing
+        latent_drift_score = 0.0
+        if len(frames) >= 4:
+            bg_drifts = []
+            for i in range(1, min(12, len(frames))):
+                try:
+                    p_prev = cv2.resize(cv2.cvtColor(frames[i - 1], cv2.COLOR_BGR2GRAY), (320, 180))
+                    p_curr = cv2.resize(cv2.cvtColor(frames[i], cv2.COLOR_BGR2GRAY), (320, 180))
+                    h, w = p_prev.shape
+                    c1_p, c1_c = p_prev[:int(h * 0.25), :int(w * 0.25)], p_curr[:int(h * 0.25), :int(w * 0.25)]
+                    c2_p, c2_c = p_prev[:int(h * 0.25), int(w * 0.75):], p_curr[:int(h * 0.25), int(w * 0.75):]
+                    diff1 = float(np.abs(c1_p.astype(float) - c1_c.astype(float)).mean())
+                    diff2 = float(np.abs(c2_p.astype(float) - c2_c.astype(float)).mean())
+                    bg_drifts.append((diff1 + diff2) / 2.0)
+                except Exception:
+                    continue
+
+            mean_bg_drift = float(np.mean(bg_drifts)) if bg_drifts else 0.0
+            if 0.5 < mean_bg_drift < 4.0:
+                latent_drift_score = float(np.clip((mean_bg_drift - 0.7) / 2.0, 0.0, 1.0))
+
+        combined = float(0.55 * spectral_score + 0.35 * ocular_score + 0.10 * latent_drift_score)
+        details = {
+            "mean_slope": round(mean_slope, 3),
+            "spectral_score": round(spectral_score, 3),
+            "eye_std": round(eye_std, 4),
+            "ocular_score": round(ocular_score, 3),
+            "latent_drift_score": round(latent_drift_score, 3),
+            "combined": round(combined, 3),
+        }
+        return combined, details
+
     def _localize_temporal_segments(
         self, timestamps: List[float], frame_tampering_scores: List[float], threshold: float = 0.45
     ) -> List[List[float]]:
@@ -563,9 +661,10 @@ class DeepfakeVisionDetector:
             faces_detected_count = sum(1 for r in frame_records if r["face_detected"])
             face_presence_ratio = round(faces_detected_count / len(frames), 3) if frames else 0.0
 
-            # Temporal and deep feature consistency
+            # Temporal, deep feature, and generative diffusion consistency
             temporal_flicker, per_frame_flickers = self._analyze_temporal_consistency(face_crops)
             deep_anomaly, identity_sim, neural_fake_prob = self._extract_deep_features(face_crops)
+            generative_diffusion, diff_details = self._analyze_generative_diffusion(frames, face_crops)
 
             # Merge temporal scores back to frame records
             for idx, f_score in enumerate(per_frame_flickers):
@@ -580,8 +679,9 @@ class DeepfakeVisionDetector:
 
             # Multi-Branch Forensic Evidence Fusion
             branches = {
+                "generative_diffusion": generative_diffusion,
                 "face_swap_boundary": mean_boundary,
-                "generative_ai": mean_fft,
+                "spectral_lattice": mean_fft,
                 "temporal_flicker": temporal_flicker,
                 "deep_anomaly": deep_anomaly,
             }
@@ -589,49 +689,53 @@ class DeepfakeVisionDetector:
             if self.has_finetuned_model and neural_fake_prob is not None:
                 branches["neural_classifier"] = neural_fake_prob
                 base_prob = (
-                    0.25 * mean_boundary +
-                    0.25 * mean_fft +
+                    0.30 * generative_diffusion +
+                    0.20 * mean_boundary +
+                    0.15 * mean_fft +
                     0.15 * temporal_flicker +
-                    0.15 * deep_anomaly +
-                    0.20 * neural_fake_prob
+                    0.10 * deep_anomaly +
+                    0.10 * neural_fake_prob
                 )
             else:
                 base_prob = (
-                    0.30 * mean_boundary +
-                    0.30 * mean_fft +
-                    0.20 * temporal_flicker +
-                    0.20 * deep_anomaly
+                    0.35 * generative_diffusion +
+                    0.25 * mean_boundary +
+                    0.15 * mean_fft +
+                    0.15 * temporal_flicker +
+                    0.10 * deep_anomaly
                 )
 
-            # Significant anomaly identification:
-            # Requires elevated deviation (> 0.50) from natural baseline.
-            has_boundary_anomaly = mean_boundary >= 0.50
+            # Significant anomaly identification
+            has_diffusion_anomaly = generative_diffusion >= 0.50
+            has_boundary_anomaly = mean_boundary >= 0.48
             has_spectral_anomaly = mean_fft >= 0.45
             has_identity_anomaly = deep_anomaly >= 0.45
             has_neural_anomaly = (neural_fake_prob is not None and neural_fake_prob >= 0.65)
             has_temporal_anomaly = temporal_flicker >= 0.55
 
-            # Physical structural forensics:
-            physical_anomalies = [has_boundary_anomaly, has_spectral_anomaly, has_identity_anomaly]
+            physical_anomalies = [has_diffusion_anomaly, has_boundary_anomaly, has_spectral_anomaly, has_identity_anomaly]
             num_physical = sum(physical_anomalies)
 
-            # Forensic Ground Truth:
-            # If all physical structural vectors are pristine (< 0.35 boundary, < 0.25 FFT, < 0.35 identity),
-            # this is an authentic optical capture.
-            # Head turns, speech articulation, or camera shake must NEVER produce a fake verdict on their own!
-            if mean_boundary < 0.35 and mean_fft < 0.25 and deep_anomaly < 0.35:
-                # Authentic optical capture
-                prob_fake = float(max(mean_boundary, mean_fft, deep_anomaly) * 0.5)
-                prob_fake = min(prob_fake, 0.18)
+            # Forensic Ground Truth & Evidence Fusion:
+            # 1. Generative AI Video (Diffusion / Text-to-Video) decisive trigger
+            if has_diffusion_anomaly:
+                if generative_diffusion >= 0.70:
+                    prob_fake = float(np.clip(0.85 + (generative_diffusion - 0.70) * 0.40, 0.85, 0.98))
+                else:
+                    prob_fake = float(np.clip(0.62 + (generative_diffusion - 0.50) * 1.15, 0.60, 0.85))
+            # 2. Authentic optical capture: all physical and diffusion vectors are pristine
+            elif mean_boundary < 0.35 and mean_fft < 0.25 and deep_anomaly < 0.35 and generative_diffusion < 0.32:
+                prob_fake = float(max(mean_boundary, mean_fft, deep_anomaly, generative_diffusion) * 0.4)
+                prob_fake = min(prob_fake, 0.15)
+            # 3. Corroborated manipulation across multiple independent forensic vectors
             elif num_physical >= 2 or (num_physical >= 1 and (has_temporal_anomaly or has_neural_anomaly)):
-                # Corroborated manipulation across multiple independent forensic vectors
                 prob_fake = min(0.95, base_prob + 0.25)
+            # 4. Single physical anomaly: moderate variation
             elif num_physical == 1:
-                # Single physical anomaly: suspicious / moderate variation
                 prob_fake = float(np.clip(base_prob, 0.35, 0.55))
+            # 5. Authentic baseline
             else:
-                # Authentic baseline
-                prob_fake = float(np.clip(base_prob * 0.6, 0.05, 0.25))
+                prob_fake = float(np.clip(base_prob * 0.6, 0.03, 0.22))
 
             prob_fake = float(np.clip(prob_fake, 0.02, 0.98))
             prob_real = float(1.0 - prob_fake)
@@ -639,17 +743,26 @@ class DeepfakeVisionDetector:
             is_fake = prob_fake >= threshold
             confidence = prob_fake if is_fake else prob_real
 
+            # Update frame records if whole-video generative diffusion is identified
+            if has_diffusion_anomaly:
+                for r in frame_records:
+                    r["anomaly_score"] = round(max(r["anomaly_score"], generative_diffusion * 0.85), 3)
+                    r["status"] = "tampered" if r["anomaly_score"] >= 0.60 else "suspicious"
+
             # Explanatory Verdict & Technique Labeling
             primary_branch = max(branches, key=branches.get)
             if is_fake:
                 prediction = "fake"
                 risk_level = "CRITICAL (MANIPULATED)"
-                if primary_branch == "generative_ai":
-                    verdict = "AI-Generated Synthetic Video Detected (Periodic Spectral Lattice Signature)"
-                    technique = "Generative AI Video (Text-to-Video / Diffusion Model)"
+                if has_diffusion_anomaly or primary_branch == "generative_diffusion":
+                    verdict = "AI-Generated Synthetic Video Detected (Diffusion VAE Spectral & Ocular Signature)"
+                    technique = "Generative AI Video (Text-to-Video / Video Diffusion Model)"
                 elif primary_branch == "face_swap_boundary":
                     verdict = "Facial Swap Deepfake Detected (Boundary Blending Seam Discontinuity)"
                     technique = "Face Swap / Compositing Deepfake (Poisson/Feathering Seam)"
+                elif primary_branch in ["spectral_lattice", "generative_ai"]:
+                    verdict = "AI-Generated Synthetic Video Detected (Periodic Spectral Lattice Signature)"
+                    technique = "Generative AI Video (GAN / Upconvolution Grid Lattice)"
                 elif primary_branch == "temporal_flicker":
                     verdict = "Temporal Glitch / Warping Deepfake Detected (Inter-Frame Jitter)"
                     technique = "Temporal Deepfake / Frame Warping"
@@ -669,6 +782,11 @@ class DeepfakeVisionDetector:
 
             # Generate human-readable forensic findings log
             findings_log = []
+            if generative_diffusion < 0.35:
+                findings_log.append(f"[AUTHENTIC] Optical frequency distribution conforms to natural camera lens physics (slope: {diff_details.get('mean_slope', -2.5):.2f}) with natural ocular dynamics.")
+            else:
+                findings_log.append(f"[ANOMALY] Synthetic video diffusion signature identified: steep spectral decay slope ({diff_details.get('mean_slope', -3.2):.2f}) and static ocular dynamics.")
+
             if mean_boundary < 0.30:
                 findings_log.append("[AUTHENTIC] Facial boundary transitions are continuous; no blending seams or feathering halos detected.")
             else:
@@ -679,7 +797,7 @@ class DeepfakeVisionDetector:
             else:
                 findings_log.append("[ANOMALY] Periodic grid lattice peaks detected in frequency domain (characteristic of diffusion/GAN upsampling).")
 
-            if temporal_flicker < 0.35 or (mean_boundary < 0.35 and mean_fft < 0.25):
+            if temporal_flicker < 0.35 or (mean_boundary < 0.35 and mean_fft < 0.25 and generative_diffusion < 0.35):
                 findings_log.append("[AUTHENTIC] Inter-frame facial dynamics are consistent; no synthetic warping or non-rigid jitter.")
             else:
                 findings_log.append("[ANOMALY] Inter-frame warping and edge jitter detected across consecutive frames.")
@@ -703,6 +821,13 @@ class DeepfakeVisionDetector:
                 return "Critical Manipulation"
 
             diagnostic_breakdown = {
+                "generative_diffusion": {
+                    "name": "Generative Video Diffusion & Ocular Dynamics",
+                    "score": round(generative_diffusion, 3),
+                    "percentage": round(generative_diffusion * 100, 1),
+                    "rating": get_rating(generative_diffusion),
+                    "description": "Analyzes full-frame radial PSD decay slope and biological ocular/blinking variance characteristic of video diffusion models.",
+                },
                 "boundary_seams": {
                     "name": "Facial Boundary & Blending Seams",
                     "score": round(mean_boundary, 3),
@@ -776,7 +901,10 @@ class DeepfakeVisionDetector:
                 "duration_seconds": metadata.get("duration_seconds", 0.0),
                 "forensic_metrics": {
                     "primary_technique": technique,
-                    "generative_ai_score": round(mean_fft, 4),
+                    "generative_diffusion_score": round(generative_diffusion, 4),
+                    "spectral_slope": diff_details.get("mean_slope", 0.0),
+                    "ocular_variance_score": diff_details.get("ocular_score", 0.0),
+                    "generative_ai_score": round(max(mean_fft, generative_diffusion), 4),
                     "boundary_artifact_score": round(mean_boundary, 4),
                     "fft_frequency_score": round(mean_fft, 4),
                     "temporal_flicker_score": round(temporal_flicker, 4),

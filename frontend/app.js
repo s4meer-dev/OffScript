@@ -479,6 +479,7 @@ function renderForensicDashboard(data) {
 
         // Multi-Vector Diagnostics Radar Grid
         const diag = data.diagnostic_breakdown || visualData.diagnostic_breakdown || {};
+        renderDiagnosticVector('Diffusion', diag.generative_diffusion || { score: 0.1, rating: 'Natural' });
         renderDiagnosticVector('Boundary', diag.boundary_seams || { score: 0.1, rating: 'Pristine' });
         renderDiagnosticVector('Fft', diag.spectral_lattice || { score: 0.1, rating: 'Natural' });
         renderDiagnosticVector('Temporal', diag.temporal_stability || { score: 0.1, rating: 'Smooth' });
