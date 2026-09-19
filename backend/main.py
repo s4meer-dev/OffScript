@@ -22,6 +22,7 @@ from ai_models.multimodal.multimodal_detector import UnifiedDeepfakeDetector
 from backend.routes.predict import router as predict_router
 from backend.routes.health import router as health_router
 from backend.routes.samples import router as samples_router
+from backend.routes.train import router as train_router
 
 FRONTEND_DIR = ROOT_DIR / "frontend"
 
@@ -55,6 +56,7 @@ app.add_middleware(
 app.include_router(health_router)
 app.include_router(predict_router)
 app.include_router(samples_router)
+app.include_router(train_router)
 
 
 @app.get("/favicon.ico", include_in_schema=False)

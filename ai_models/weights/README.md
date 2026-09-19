@@ -1,24 +1,39 @@
 ---
 license: apache-2.0
-base_model: mo-thecreator/wav2vec2-base-finetuned
+base_model: motheecreator/Deepfake-audio-detection
 tags:
 - generated_from_trainer
+datasets:
+- audiofolder
 metrics:
 - accuracy
 model-index:
-- name: wav2vec2-base-finetuned-finetuned
-  results: []
+- name: Deepfake-audio-detection-V2
+  results:
+  - task:
+      name: Audio Classification
+      type: audio-classification
+    dataset:
+      name: audiofolder
+      type: audiofolder
+      config: default
+      split: train
+      args: default
+    metrics:
+    - name: Accuracy
+      type: accuracy
+      value: 0.9972843305874898
 ---
 
 <!-- This model card has been generated automatically according to the information the Trainer had access to. You
 should probably proofread and complete it, then remove this comment. -->
 
-# wav2vec2-base-finetuned-finetuned
+# Deepfake-audio-detection-V2
 
-This model is a fine-tuned version of [mo-thecreator/wav2vec2-base-finetuned](https://huggingface.co/mo-thecreator/wav2vec2-base-finetuned) on the None dataset.
+This model is a fine-tuned version of [motheecreator/Deepfake-audio-detection](https://huggingface.co/motheecreator/Deepfake-audio-detection) on the audiofolder dataset.
 It achieves the following results on the evaluation set:
-- Loss: 0.0829
-- Accuracy: 0.9882
+- Loss: 0.0141
+- Accuracy: 0.9973
 
 ## Model description
 
@@ -38,35 +53,30 @@ More information needed
 
 The following hyperparameters were used during training:
 - learning_rate: 3e-05
-- train_batch_size: 8
-- eval_batch_size: 8
+- train_batch_size: 32
+- eval_batch_size: 32
 - seed: 42
 - gradient_accumulation_steps: 4
-- total_train_batch_size: 32
+- total_train_batch_size: 128
 - optimizer: Adam with betas=(0.9,0.999) and epsilon=1e-08
-- lr_scheduler_type: linear
+- lr_scheduler_type: cosine
 - lr_scheduler_warmup_ratio: 0.1
 - num_epochs: 5
 
 ### Training results
 
-| Training Loss | Epoch | Step | Accuracy | Validation Loss |
-|:-------------:|:-----:|:----:|:--------:|:---------------:|
-| 0.1448        | 1.0   | 1900 | 0.9601   | 0.1447          |
-| 0.0673        | 2.0   | 3800 | 0.9824   | 0.0817          |
-| 0.0178        | 3.0   | 5700 | 0.9796   | 0.1054          |
-| 0.0002        | 4.0   | 7600 | 0.9824   | 0.1074          |
-| 0.0108        | 5.0   | 9500 | 0.9882  |  0.0829          |
+| Training Loss | Epoch | Step | Validation Loss | Accuracy |
+|:-------------:|:-----:|:----:|:---------------:|:--------:|
+| 0.0503        | 1.0   | 1381 | 0.0514          | 0.9858   |
+| 0.0327        | 2.0   | 2762 | 0.0174          | 0.9956   |
+| 0.0064        | 3.0   | 4143 | 0.0221          | 0.9950   |
+| 0.0003        | 4.0   | 5524 | 0.0174          | 0.9965   |
+| 0.0115        | 5.0   | 6905 | 0.0141          | 0.9973   |
 
 
 ### Framework versions
 
-- Transformers 4.39.3
+- Transformers 4.41.2
 - Pytorch 2.1.2
-- Datasets 2.18.0
-- Tokenizers 0.15.2
-
-### Contributors
-
-- Abdalla312
-- mo-thecreator
+- Datasets 2.19.2
+- Tokenizers 0.19.1
